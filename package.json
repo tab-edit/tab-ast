@@ -1,0 +1,32 @@
+{
+  "name": "tab-ast",
+  "version": "1.0.0",
+  "description": "codemirror 6 extension to generate an ast for music tablature",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Stan15/tab-ast.git"
+  },
+  "keywords": [
+	"abstract syntax tree",
+	"parsing",
+    "music",
+    "tabs",
+    "guitar",
+    "tablature",
+    "drum",
+    "bass"
+  ],
+  "author": "Stanley Ihesiulo",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Stan15/tab-ast/issues"
+  },
+  "homepage": "https://github.com/Stan15/tab-ast#readme",
+  "devDependencies": {
+    "typescript": "^4.5.4"
+  }
+}
