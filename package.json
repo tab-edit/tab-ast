@@ -11,8 +11,8 @@
     "url": "git+https://github.com/Stan15/tab-ast.git"
   },
   "keywords": [
-	"abstract syntax tree",
-	"parsing",
+    "abstract syntax tree",
+    "parsing",
     "music",
     "tabs",
     "guitar",
@@ -28,5 +28,9 @@
   "homepage": "https://github.com/Stan15/tab-ast#readme",
   "devDependencies": {
     "typescript": "^4.5.4"
+  },
+  "dependencies": {
+    "@codemirror/state": "^0.19.6",
+    "@codemirror/view": "^0.19.40"
   }
 }
