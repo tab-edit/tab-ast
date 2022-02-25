@@ -36,11 +36,15 @@ export abstract class TabParser {
         from: number;
         to: number;
     }[]): TabTree {
-        // TODO: implement method stub
-        return new TabTree();
+        let parse = this.startParse(editorState, fragments, ranges);
+        for(;;) {
+            let done = parse.advance(100);
+            if (done.tree) return done.tree;
+        }
     }
 }
 
+// TODO: think of a better name for this class
 export class TabParserImplement extends TabParser {
     createParse(editorState: EditorState, fragments: readonly TabFragment[], ranges: readonly {from: number, to: number}[]): PartialTabParse {
         return new PartialTabParseImplement(editorState, fragments || [], ranges);
@@ -71,7 +75,7 @@ export interface PartialTabParse {
     stopAt(pos: number): void;
 
     /// Reports whether `stopAt` has been called on this parse.
-    readonly stoppedAt: number | null
+    readonly stoppedAt: number | null;
 
     getFragments(): TabFragment[];
 }
@@ -110,18 +114,22 @@ export class PartialTabParseImplement implements PartialTabParse {
             return {blocked: true, tree: null};
         }
 
-        if (this.cachedFragments && this.reuseFragment(this.parsedPos)) return {blocked: false, tree: null};
+        if (this.fragments[this.fragments.length-1].isPartial()) {
+            this.fragments[this.fragments.length-1].advance();
+            return {blocked: false, tree: null};
+        }
+        if (this.cachedFragments && this.reuseFragment(this.parsedPos)) return {blocked: false, tree: null}
             
         let rawParseTree = syntaxTree(this.editorState);
         let node = (rawParseTree.resolve(this.parsedPos,1) as SyntaxNode);
         let curr = node.cursor;
         //look for TabSegment at this position and add it to parse tree
-        while (curr && curr.name!=TabTree.ParseAnchor) curr.parent();
+        while(curr.name!=TabTree.ParseAnchor && curr.parent()) {}
         if (curr.name!=TabTree.ParseAnchor) {
             this.parsedPos = node.to;
             return {blocked: false, tree: null};
         }
-        let frag = TabFragment.parseFragment(curr.node, this.text);
+        let frag = TabFragment.startParse(curr.node, this.text);
         if (frag) this.fragments.push(frag);
         this.parsedPos = curr.to;
         return {blocked: false, tree: null};
@@ -138,7 +146,14 @@ export class PartialTabParseImplement implements PartialTabParse {
     }
 
     private reuseFragment(start: number) {
-        // TODO: implement method stub
+        for (let fI=0; fI<this.cachedFragments.length; fI++) {
+            if (this.cachedFragments[fI].from > start) break;
+            if (this.cachedFragments[fI].to > start) {
+                this.fragments.push(this.cachedFragments[fI]);
+                this.parsedPos = this.cachedFragments[fI].to;
+                return true;
+            }
+        }
         return false;
     }
 }

@@ -171,7 +171,7 @@ class ParseContext  {
             for(;;) {
                 let {blocked, tree} = this.parse.advance();
                 if (tree!=null) {
-                    // TODO: this.fragments = this.withoutTempSkipped(TabFragment.addTree(tree, this.fragments, this.parse.stoppedAt != null)); also consider incorporating this.fragments = this.parse.getFragments()
+                    this.fragments = this.withoutTempSkipped(TabFragment.addTree(tree, this.fragments, this.parse.stoppedAt != null));
                     this.treeLen = this.parse.stoppedAt ?? this.state.doc.length;
                     this.tree = tree;
                     this.parse = null;
