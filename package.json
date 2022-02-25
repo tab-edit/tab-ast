@@ -27,10 +27,14 @@
   },
   "homepage": "https://github.com/Stan15/tab-ast#readme",
   "devDependencies": {
-    "typescript": "^4.5.4"
+    "parser-tablature": "file:../parser-tablature",
+    "typescript": "^4.5.5"
   },
   "dependencies": {
+    "@codemirror/language": "^0.19.7",
     "@codemirror/state": "^0.19.6",
-    "@codemirror/view": "^0.19.40"
+    "@codemirror/view": "^0.19.40",
+    "@lezer/common": "^0.15.11",
+    "@lezer/lr": "^0.15.7"
   }
 }
