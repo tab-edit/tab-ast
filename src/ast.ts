@@ -1,18 +1,94 @@
 //TODO give credit to https://github.com/codemirror/language/blob/main/src/language.ts
-import { ChangeDesc, EditorState, Facet, StateEffect, StateField, Transaction } from "@codemirror/state";
+import { ChangeDesc, EditorState, Extension, Facet, StateEffect, StateField, Transaction } from "@codemirror/state";
 import { EditorView, logException, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { ChangedRange } from "@lezer/common";
 import { TabParser, PartialTabParse } from "./extension/parse";
 import { TabFragment, TabTree } from "./tree/ast";
 
-class TabAST {
-    // TODO
+// This mirrors the `Language` class in @codemirror/language
+class TabLanguage {
+    /// The extension value to install this provider.
+    readonly extension: Extension;
+
+    /// The parser object.
+    parser: TabParser;
+    
+    ///
+    constructor(
+        /// The tablature data data facet used for this language (TODO: i don't understand this)
+        readonly data: Facet<{[name: string]: any}>,
+        parser: TabParser,
+        extraExtensions: Extension[] = []
+    ) {
+        // kludge to define EditorState.tree as a debugging helper,
+        // without the EditorState package actually knowing about it
+        if (!EditorState.prototype.hasOwnProperty("tree")) {
+            Object.defineProperty(EditorState.prototype, "tree", {get() { return tabSyntaxTree(this) }});
+        }
+        
+        this.parser = parser;
+        this.extension = [
+            tabLanguage.of(this),
+            EditorState.languageData.of((state, pos, side) => state.facet(languageDataFacetAt(state, pos, side)!))
+        ].concat(extraExtensions);
+    }
+
+    /// Query whether this language is active at the given position
+    isActiveAt(state: EditorState, pos: number, side: -1 | 0 | 1 = -1) {
+        return languageDataFacetAt(state, pos, side) == this.data;
+    }
+
+    /// Indicates whether this language allows nested languages. The 
+    /// default implementation returns true.
+    get allowsNesting() { return false }
 
     /// @internal
-    static state: StateField<ASTState>;
+    static state: StateField<TabLanguageState>;
 
     ///@internal
-    static setState = StateEffect.define<ASTState>();
+    static setState = StateEffect.define<TabLanguageState>();
+}
+
+function languageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1) {
+    let topLang = state.facet(tabLanguage);
+    if (!topLang) return null;
+    let facet = topLang.data;
+    return facet;
+}
+
+/// Get the syntax tree for a state, which is the current (possibly
+/// incomplete) parse tree of active language, or the empty tree 
+/// if there is no language available.
+export function tabSyntaxTree(state: EditorState): TabTree {
+    let field = state.field(TabLanguage.state, false)
+    return field ? field.tree : TabTree.empty
+  }
+
+/// Try to get a parse tree that spans at least up to `upto`. The
+/// method will do at most `timeout` milliseconds of work to parse
+/// up to that point if the tree isn't already available.
+export function ensureTabSyntaxTree(state: EditorState, upto: number, timeout = 50): TabTree | null {
+    let parse = state.field(TabLanguage.state, false)?.context;
+    return !parse ? null : parse.isDone(upto) || parse.work(timeout, upto) ? parse.tree : null;
+}
+
+/// Queries whether there is a full syntax tree available up to the 
+/// given document position. If there isn't, the background parse
+/// process _might_ still be working and update the tree further, but 
+/// there is no guarantee of that-the parser will stop working when it 
+/// has spent a certain amount of time or has moved beyond the visible
+/// viewport. Always returns false if no language has been enabled.
+export function tabSyntaxTreeAvailable(state: EditorState, upto = state.doc.length) {
+    return state.field(TabLanguage.state, false)?.context.isDone(upto) || false;
+}
+
+/// Tells you whether the language parser is planning to do more
+/// parsing work (in a `requestIdleCallback` pseudo-thread) or has
+/// stopped running, either because it parsed the entire document,
+/// because it spent too much time and was cut off, or because there
+/// is no language parser enabled.
+export function tabSyntaxParserRunning(view: EditorView) {
+    return view.plugin(parseWorker)?.isWorking() || false;
 }
 
 const enum Work {
@@ -94,7 +170,6 @@ class ParseContext  {
                 upto < this.state.doc.length) this.parse.stopAt(upto);
             for(;;) {
                 let {blocked, tree} = this.parse.advance();
-                if (blocked) return false;
                 if (tree!=null) {
                     // TODO: this.fragments = this.withoutTempSkipped(TabFragment.addTree(tree, this.fragments, this.parse.stoppedAt != null)); also consider incorporating this.fragments = this.parse.getFragments()
                     this.treeLen = this.parse.stoppedAt ?? this.state.doc.length;
@@ -118,7 +193,7 @@ class ParseContext  {
             this.withContext(() => { while (!(tree = this.parse!.advance(Work.MinSlice).tree)) {} });
             this.treeLen = pos;
             this.tree = tree!;
-            //this.fragments = this.withoutTempSkipped(ASTFragment.addTree(this.tree, this.fragments, true)); also consider incorporating this.fragments = this.parse.getFragments()
+            // TODO: this.fragments = this.withoutTempSkipped(TabFragment.addTree(this.tree, this.fragments, true)); also consider incorporating this.fragments = this.parse.getFragments()
             this.parse = null;
         }
     }
@@ -188,13 +263,20 @@ class ParseContext  {
         }
     }
 
-    /// Notify hte parse scheduler that the given region was skipped
+    /// Notify the parse scheduler that the given region was skipped
     /// because it wasn't in view, and the parse should be restarted
     /// when it comes into view.
     skipUntilInView(from: number, to: number) {
         this.skipped.push({from, to});
     }
 
+    /// Returns a parser intended to be used as placeholder when
+    /// asynchronously loading a nested parser. It'll skip its input and
+    /// mark it as not-really-parsed, so that the next update will parse
+    /// it again.
+    ///
+    /// When `until` is given, a reparse will be scheduled when that
+    /// promise resolves.
     static getSkippingParser(until?: Promise<unknown>) {
         return new class extends TabParser {
             createParse(editorState: EditorState, fragments: readonly TabFragment[], ranges: readonly { from: number; to: number; }[]): PartialTabParse {
@@ -237,7 +319,7 @@ function cutFragments(fragments: readonly TabFragment[], from: number, to: numbe
 }
 
 
-class ASTState {
+class TabLanguageState {
     // The current tree. Immutable, because directly accessible from
     // the editor state.
     readonly tree: TabTree;
@@ -257,24 +339,27 @@ class ASTState {
         // end position or the end of the viewport, to avoid slowing down
         // state updates with parse work beyond the viewport.
 
-        //TODO spend some time to understand this correctly. this is where most of your customization would begin.
+        //TODO spend some time to understand this correctly.
         let upto = this.context.treeLen == tr.startState.doc.length ? undefined
             : Math.max(tr.changes.mapPos(this.context.treeLen), newCx.viewport.to);
-        if (!newCx.work(Work.Apply, upto)) newC
-
+        if (!newCx.work(Work.Apply, upto)) newCx.takeTree();
+        return new TabLanguageState(newCx);
     }
 
     static init(state: EditorState) {
         let vpTo = Math.min(Work.InitViewport, state.doc.length);
-        //TODO understand and then implement this part of the code.
+        let parseState = new ParseContext(state.facet(tabLanguage)!.parser, state, [],
+                                            TabTree.empty, 0, {from: 0, to: vpTo}, [], null);
+        if (!parseState.work(Work.Apply, vpTo)) parseState.takeTree(); // TODO: understand this line
+        return new TabLanguageState(parseState);
     }
 }
 
-TabAST.state = StateField.define<ASTState>({
-    create: ASTState.init,
+TabLanguage.state = StateField.define<TabLanguageState>({
+    create: TabLanguageState.init,
     update(value, tr) {
-        for (let e of tr.effects) if (e.is(TabAST.setState)) return e.value; //look at the ParseWorker.work() method to see when we dispatch a setState StateEffect.
-        if (tr.startState.facet(tablatureAST) != tr.state.facet(tablatureAST)) return ASTState.init(tr.state);
+        for (let e of tr.effects) if (e.is(TabLanguage.setState)) return e.value; //look at the ParseWorker.work() method to see when we dispatch a setState StateEffect.
+        if (tr.startState.facet(tabLanguage) != tr.state.facet(tabLanguage)) return TabLanguageState.init(tr.state);
         return value.apply(tr); 
     }
 });
@@ -313,7 +398,7 @@ const parseWorker = ViewPlugin.fromClass(class ParseWorker {
     }
 
     update(update: ViewUpdate) {
-        let cx = this.view.state.field(TabAST.state).context;
+        let cx = this.view.state.field(TabLanguage.state).context;
         if (cx.updateViewport(update.view.viewport) || this.view.viewport.to > cx.treeLen)
             this.scheduleWork();
         if (update.docChanged) {
@@ -325,7 +410,7 @@ const parseWorker = ViewPlugin.fromClass(class ParseWorker {
 
     scheduleWork() {
         if (this.working) return;
-        let {state} = this.view, field = state.field(TabAST.state);
+        let {state} = this.view, field = state.field(TabLanguage.state);
         if (field.tree!=field.context.tree || !field.context.isDone(state.doc.length))
             this.working = requestIdle(this.work);
     }
@@ -341,14 +426,14 @@ const parseWorker = ViewPlugin.fromClass(class ParseWorker {
         if (this.chunkBudget <= 0) return; //no more budget
 
         let {state, viewport: {to: vpTo}} = this.view;
-        let field = state.field(TabAST.state);
+        let field = state.field(TabLanguage.state);
         let time = Math.min(this.chunkBudget, Work.Slice, deadline ? Math.max(Work.MinSlice, deadline.timeRemaining() - 5) : 1e9);
         let viewportFirst = field.context.treeLen < vpTo && state.doc.length > vpTo + 1000;   //TODO i don't fully understand this line
         let done = field.context.work(time, vpTo + (viewportFirst ? 0 : Work.MaxParseAhead)); //i also don't fully understand this.
         this.chunkBudget -= Date.now() - now;
         if (done || this.chunkBudget <= 0) {
             field.context.takeTree();
-            this.view.dispatch({effects: TabAST.setState.of(new ASTState(field.context))});
+            this.view.dispatch({effects: TabLanguage.setState.of(new TabLanguageState(field.context))});
         }
         if (this.chunkBudget > 0 && !(done && !viewportFirst)) this.scheduleWork();
         this.checkAsyncSchedule(field.context);
@@ -361,7 +446,7 @@ const parseWorker = ViewPlugin.fromClass(class ParseWorker {
                 .then(() => this.scheduleWork())
                 .catch(err => logException(this.view.state, err))
                 .then(() => this.workScheduled--);
-                cx.scheduleOn = null;
+            cx.scheduleOn = null;
         }
     }
 
@@ -376,7 +461,31 @@ const parseWorker = ViewPlugin.fromClass(class ParseWorker {
     eventHandlers: {focus() { this.scheduleWork() }}
 })
 
-export const tablatureAST = Facet.define<AST, AST|null>({
-    combine(astrees) { return astrees.length ? astrees[0] : null },
-    enables: [TabAST.state, parseWorker]
+// This mirrors the `language` facet in @codemirror/language
+export const tabLanguage = Facet.define<TabLanguage, TabLanguage|null>({
+    combine(tabLanguages) { return tabLanguages.length ? tabLanguages[0] : null },
+    enables: [TabLanguage.state, parseWorker]
 });
+
+
+/// This class bundles a TabLanguage object with an 
+/// optional set of supporting extensions. TabLanguage packages are 
+/// encouraged to export a function that optionally takes a 
+/// configuration object and returns a `TabLanguageSupport` instance, as 
+/// the main way for client code to use the package
+export class TabLanguageSupport {
+    /// An extension including both the language and its support 
+    /// extensions. (Allowing the object to be used as an extension 
+    /// value itself.)
+    extension: Extension;
+
+    /// Create a support object
+    constructor(
+        /// The language object.
+        readonly tabLanguage: TabLanguage,
+        /// An optional set of supporting extensions.
+        readonly support: Extension = []
+    ) {
+        this.extension = [tabLanguage, support];
+    }
+}

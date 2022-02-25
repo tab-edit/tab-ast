@@ -56,7 +56,7 @@ export interface PartialTabParse {
     /// returns {blocked:boolean, tree:TabTree|null}
     ///     * blocked - is this parser blocked waiting for the other parser it is dependent on?
     ///     * tree - the TabTree when the parse completes and null otherwise
-    advance(): {blocked:boolean, tree: TabTree|null};
+    advance(catchupTimeout?: number): {blocked:boolean, tree: TabTree|null};
     
     
     /// The position up to which the document has been parsed.
@@ -100,7 +100,7 @@ export class PartialTabParseImplement implements PartialTabParse {
         this.parsedPos = ranges[0].from;
     }
 
-    advance(catchupTimeout: number = 0): {blocked:boolean, tree: TabTree|null} {
+    advance(catchupTimeout: number = 25): {blocked:boolean, tree: TabTree|null} {
         if (this.stoppedAt != null && this.parsedPos > this.stoppedAt)
             return {blocked: false, tree: this.finish()};
 
