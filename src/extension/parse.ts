@@ -105,6 +105,7 @@ export class PartialTabParseImplement implements PartialTabParse {
     }
 
     advance(catchupTimeout: number = 25): {blocked:boolean, tree: TabTree|null} {
+        if (this.fragments[this.fragments.length-1].isInvalid) this.fragments.pop();
         if (this.stoppedAt != null && this.parsedPos > this.stoppedAt)
             return {blocked: false, tree: this.finish()};
 
@@ -114,7 +115,7 @@ export class PartialTabParseImplement implements PartialTabParse {
             return {blocked: true, tree: null};
         }
 
-        if (this.fragments[this.fragments.length-1].isPartial()) {
+        if (!this.fragments[this.fragments.length-1].isParsed) {
             this.fragments[this.fragments.length-1].advance();
             return {blocked: false, tree: null};
         }
@@ -129,7 +130,7 @@ export class PartialTabParseImplement implements PartialTabParse {
             this.parsedPos = node.to;
             return {blocked: false, tree: null};
         }
-        let frag = TabFragment.startParse(curr.node, this.text);
+        let frag = TabFragment.startParse(curr.node, this.editorState);
         if (frag) this.fragments.push(frag);
         this.parsedPos = curr.to;
         return {blocked: false, tree: null};
