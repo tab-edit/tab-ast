@@ -14,14 +14,12 @@ export class TabFragment {
         if (linearParser) return;
         if (!rootNode) throw new Error("rootNode must be present if no linearParser is provided");
         if (rootNode.name!=SyntaxNodeTypes.TabSegment) throw new Error("Incorrect node type used.");
-        this.linearParser = new LinearParser(
-            [new TabSegment(Uint16Array.from([rootNode.from,rootNode.to]), {[SyntaxNodeTypes.TabSegment]: [rootNode]})],
-            from
-        );
+        this.linearParser = new LinearParser(rootNode, this.from);
     }
 
-    advance():boolean {
-        return this.linearParser.advance() == null;
+    advance():FragmentNodeCursor | null {
+        let nodeSet = this.linearParser.advance();
+        return nodeSet ? new FragmentNodeCursor(nodeSet) : null;
     }
 
     
@@ -72,18 +70,22 @@ class LinearParser {
     // each array starts with a number representing the node type and a number representing the length
     // of the array it and its children occupy, and the rest of the 
     // numbers are the node's ranges. this requires very minimal changes to implement
-    // **compare efficiency of having a number telling how many ranges a node has, vs having 2d array with one node being an array
-    // ** so potentially: [node1type, node1length, node1rangecount, node1ranges..., node2type, ...] (i think this will be better)
+    // **compare efficiency of having a number telling how many indices the ranges occupy, vs having 2d array with one node being an array
+    // ** so potentially: [node1type, node1length, node1rangelength, node1ranges..., node2type, ...] (i think this will be better but might not work cuz node1length now has to take into account the range length of all its nested childeren)
     // ** or potentially: [[node1type, node1length, node1ranges...], [node2type...], ...]
+    // and make sure to make it a Uint16array
+    // important consideration - it might be better to go with what i already had, array of class objects: https://stackoverflow.com/questions/33004572/java-performance-memory-consumption-class-vs-array
     private nodeSet: ASTNode[] = [];
     private head: LPNode | null = null;
     constructor(
-        initialContent: ASTNode[],
+        initialNode: SyntaxNode,
         /// The index of all the parsed content will be relative to this offset
         /// This is usually the index of the source TabFragment, to make 
         /// for efficient relocation of TabFragments
-        private offset: number
+        readonly offset: number
     ) {
+        if (initialNode.name!=SyntaxNodeTypes.TabSegment) throw new Error("Parsing starting from a node other than the TabSegment node is not supported at this time.");
+        let initialContent = [new TabSegment({[SyntaxNodeTypes.TabSegment]: [initialNode]}, offset)]
         this.head = new LPNode(initialContent, null);
     }
 
@@ -99,7 +101,7 @@ class LinearParser {
 
         this.nodeSet.push(content);
         this.ancestryStack.push(this.nodeSet.length-1);
-        let children = content.parse(this.offset);
+        let children = content.parse();
         for (let ancestor of this.ancestryStack) {
             this.nodeSet[ancestor].increaseLength(children);
         }
@@ -134,3 +136,7 @@ export class TabTree {
 }
 
 // TODO: implement TabFragmentCursor that traverses TabFragments
+class FragmentNodeCursor {
+    constructor(readonly nodeSet:ASTNode[]) {}
+    // TODO: implement class (nextSibling, prevSibling, parent, firstChild...)
+}

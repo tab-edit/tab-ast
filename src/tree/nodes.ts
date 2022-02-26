@@ -31,18 +31,32 @@ export enum SyntaxNodeTypes {
 }
 
 export abstract class ASTNode {
+    private ranges: Uint16Array;
     constructor(
-        readonly ranges: Uint16Array,
         /// mapping of SyntaxNode type => syntax nodes where the syntax nodes are the source
         /// nodes of the parse tree from which the ASTNode is being built.
         /// currently, once i lazily parse only once, i dispose of sourceNodes (set to null) for efficiency(TODO: i might remove this feature as it might not be a good idea to dispose)
-        protected sourceNodes: {[type:string]:SyntaxNode[]}
-        ) {}
+        protected sourceNodes: {[type:string]:SyntaxNode[]},
+        readonly offset: number
+        ) {
+            let rngs = []
+            for (let name in sourceNodes) {
+                for (let node of sourceNodes[name]) {
+                    rngs.push(node.from-offset);
+                    rngs.push(node.to-offset);
+                }
+            }
+            this.ranges = Uint16Array.from(rngs);
+        }
         protected parsed = false;
         get isParsed() { return this.parsed }
-    abstract parse(offset: number): ASTNode[];
+    public parse(): ASTNode[] {
+        this.disposeSourceNodes();
+        return [];
+    }
     
     protected disposeSourceNodes() {
+        // TODO: consider if we should preserve sourceNodes
         this.sourceNodes = null;
     }
     
@@ -54,7 +68,7 @@ export abstract class ASTNode {
 
 
 export class TabSegment extends ASTNode {
-    parse(offset: number): TabBlock[] {
+    parse(): TabBlock[] {
         if (this.parsed) return [];
         this.parsed = true;
         
@@ -130,19 +144,12 @@ export class TabSegment extends ASTNode {
 
         let tabBlocks:TabBlock[] = [];
         for (bI=0; bI<blocks.length; bI++) {
-            let ranges:number[] = []; // remember, ranges are relative to its parent fragment
-            for (let block of blocks[bI]) {
-                ranges.push(block.from-offset);
-                ranges.push(block.to-offset);
-            }
-            for (let bModifier of blockModifiers[bI]) {
-                ranges.push(bModifier.from-offset);
-                ranges.push(bModifier.to-offset);
-            }
-            tabBlocks.push(new TabBlock(Uint16Array.from(ranges), {
-                [SyntaxNodeTypes.Modifier]: blockModifiers[bI],
-                [SyntaxNodeTypes.TabString]: blocks[bI]
-            }));
+            tabBlocks.push(new TabBlock({
+                    [SyntaxNodeTypes.Modifier]: blockModifiers[bI],
+                    [SyntaxNodeTypes.TabString]: blocks[bI]
+                },
+                this.offset
+            ));
         }
         
         this.disposeSourceNodes();
@@ -151,15 +158,77 @@ export class TabSegment extends ASTNode {
 }
 
 export class TabBlock extends ASTNode {
-    parse(offset: number) {
+    parse() {
         if (this.parsed) return [];
         this.parsed = true;
-        //include modifiers and measures as children
-        
+
+        let result: ASTNode[] = [];
+
+        let modifiers = this.sourceNodes[SyntaxNodeTypes.Modifier];
+        for (let mod of modifiers) {
+            result.push(Modifier.from(mod.name, {[mod.name]: [mod]}, this.offset))
+        }
+
+        let strings = this.sourceNodes[SyntaxNodeTypes.TabString];
+
+        let measureLineNames: SyntaxNode[] = [];
+        let measures: SyntaxNode[][] = [];
+        for (let string of strings) {
+            // make sure multiplier is inserted as a child before all measures so it is traversed first
+            let multiplier = string.getChild(SyntaxNodeTypes.Multiplier);
+            if (multiplier) result.push(Modifier.from(multiplier.name, {[multiplier.name]: [multiplier]}, this.offset));
+
+            measureLineNames.push(string.getChild(SyntaxNodeTypes.MeasureLineName));
+            let measurelines = string.getChildren(SyntaxNodeTypes.MeasureLine);
+            for (let i=0; i<measurelines.length; i++) {
+                if (!measures[i]) measures[i] = [];
+                measures[i].push(measurelines[i]);
+            }
+        }
+
+        result.push(new LineNaming({[SyntaxNodeTypes.MeasureLineName]: measureLineNames}, this.offset));
+        for (let i=0; i<measures.length; i++) {
+            result.push(new Measure({[SyntaxNodeTypes.MeasureLine]: measures[i]}, this.offset))
+        }
         this.disposeSourceNodes();
-        return []
+        return result;
     }
 }
 
-// export class Measure extends ASTNode {
-// }
+export class Measure extends ASTNode {
+    parse() {
+        return [];
+    }
+}
+
+export class Sound extends ASTNode {
+    parse() {
+        return [];
+    }
+}
+
+export abstract class Note extends ASTNode {}
+export class Fret extends Note {}
+
+class MeasureLineName extends ASTNode {}
+class LineNaming extends ASTNode {
+    parse() {
+        let names = this.sourceNodes[SyntaxNodeTypes.MeasureLineName];
+        return names.map((name) => new MeasureLineName({[SyntaxNodeTypes.MeasureLineName]: [name]}, this.offset));
+    }
+}
+
+// modifiers
+abstract class Modifier extends ASTNode {
+    static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): Modifier {
+        switch(type) {
+            case SyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
+            case SyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
+            case SyntaxNodeTypes.Modifier: return new Multiplier(sourceNodes, offset);
+        }
+        return null;
+    }
+}
+class Repeat extends Modifier {}
+class TimeSignature extends Modifier {}
+class Multiplier extends Modifier {}
