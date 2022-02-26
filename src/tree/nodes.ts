@@ -47,8 +47,9 @@ export abstract class ASTNode {
     }
     
     // the length an ASTNode and all its children take up in their source array
-    private length = 1;
-    public increateLength(children: ASTNode[]) { this.length += children.length }
+    private _length = 1;
+    public increaseLength(children: ASTNode[]) { this._length += children.length }
+    get length() { return this._length; }
 }
 
 

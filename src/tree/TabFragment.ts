@@ -69,9 +69,13 @@ export class TabFragment {
 /// insertAt() operations are expensive, so this LinearParser data structure does a pre-order parsing more efficiently using singly-linked lists
 class LinearParser {
     // TODO: we can potentially make this result to be a 2-d array of numbers where 
-    // each array starts with a number representing the node type, and the rest of the 
-    // number is the node's ranges. this requires very minimal changes to implement
-    private result: ASTNode[] = [];
+    // each array starts with a number representing the node type and a number representing the length
+    // of the array it and its children occupy, and the rest of the 
+    // numbers are the node's ranges. this requires very minimal changes to implement
+    // **compare efficiency of having a number telling how many ranges a node has, vs having 2d array with one node being an array
+    // ** so potentially: [node1type, node1length, node1rangecount, node1ranges..., node2type, ...] (i think this will be better)
+    // ** or potentially: [[node1type, node1length, node1ranges...], [node2type...], ...]
+    private nodeSet: ASTNode[] = [];
     private head: LPNode | null = null;
     constructor(
         initialContent: ASTNode[],
@@ -83,13 +87,23 @@ class LinearParser {
         this.head = new LPNode(initialContent, null);
     }
 
+    private ancestryStack: number[] = [];
     advance(): ASTNode[] | null {
-        // TODO: we still need to keep track of the ancestry stack of a given node to be able to tell the length that each node and its children take up in the result array
-        if (!this.head) return this.result;
+        if (!this.head) return this.nodeSet;
         let content = this.head.getNextContent();
-        if (!content) this.head = this.head.next;
-        this.result.push(content);
-        this.head = new LPNode(content.parse(this.offset), this.head);
+        if (!content) {
+            this.head = this.head.next;
+            this.ancestryStack.pop();
+            return null;
+        }
+
+        this.nodeSet.push(content);
+        this.ancestryStack.push(this.nodeSet.length-1);
+        let children = content.parse(this.offset);
+        for (let ancestor of this.ancestryStack) {
+            this.nodeSet[ancestor].increaseLength(children);
+        }
+        this.head = new LPNode(children, this.head);
         return null;
     }
     get isDone() { return this.head==null }
