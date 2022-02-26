@@ -1,7 +1,7 @@
 import { ensureSyntaxTree, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
-import { TabTree, TabFragment } from "../tree/ast";
+import { TabFragment, TabTree } from "../tree/TabFragment";
 
 class Range {
     constructor(readonly from: number, readonly to: number) {}
@@ -158,4 +158,3 @@ export class PartialTabParseImplement implements PartialTabParse {
         return false;
     }
 }
-

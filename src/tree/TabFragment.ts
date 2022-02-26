@@ -1,7 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
-import { SyntaxNodeTypes } from "./ast";
-import { ASTNode, TabSegment } from "./nodes";
+import { ASTNode, SyntaxNodeTypes, TabSegment } from "./nodes";
 
 export class TabFragment {
     get name() { return SyntaxNodeTypes.TabSegment }
@@ -69,11 +68,16 @@ export class TabFragment {
 
 /// insertAt() operations are expensive, so this LinearParser data structure does a pre-order parsing more efficiently using singly-linked lists
 class LinearParser {
+    // TODO: we can potentially make this result to be a 2-d array of numbers where 
+    // each array starts with a number representing the node type, and the rest of the 
+    // number is the node's ranges. this requires very minimal changes to implement
     private result: ASTNode[] = [];
     private head: LPNode | null = null;
     constructor(
         initialContent: ASTNode[],
-        /// All parsed content's indices will be relative to this offset (makes for more efficient reusing of TabFragments when parsing incrementally)
+        /// The index of all the parsed content will be relative to this offset
+        /// This is usually the index of the source TabFragment, to make 
+        /// for efficient relocation of TabFragments
         private offset: number
     ) {
         this.head = new LPNode(initialContent, null);
@@ -103,3 +107,16 @@ class LPNode {
         return this.content[this.contentPointer++];
     }
 }
+
+
+
+
+export class TabTree {
+    static ParseAnchor = TabFragment.name;
+
+    constructor(readonly fragments: TabFragment[] = []) {}
+    getFragments() { return this.fragments }
+    static readonly empty = new TabTree();
+}
+
+// TODO: implement TabFragmentCursor that traverses TabFragments

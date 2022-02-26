@@ -1,7 +1,34 @@
 import { syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
-import { SyntaxNodeTypes, TabFragment } from "./ast";
+
+export enum SyntaxNodeTypes {
+    Tablature = "Tablature",
+    TabSegment = "TabSegment",
+    TabSegmentLine = "TabSegmentLine",
+    TabString = "TabString",
+    MeasureLineName = "MeasureLineName",
+    MeasureLine = "MeasureLine",
+
+    Hammer = "Hammer",
+    Pull = "Pull",
+    Slide = "Slide",
+    Fret = "Fret",
+    Harmonic = "Harmonic",
+    Grace = "Frace",
+    Comment = "Comment",
+
+    RepeatLine = "RepeatLine",
+    Repeat = "Repeat",
+    Multiplier = "Multiplier",
+    TimeSignature = "TimeSignature",
+    TimeSigLine = "TimeSigLine",
+    TimingLine = "TimingLine",
+
+    Modifier = "Modifier",
+    
+    InvalidToken = "⚠"
+}
 
 export abstract class ASTNode {
     constructor(
@@ -133,32 +160,5 @@ export class TabBlock extends ASTNode {
     }
 }
 
-export class Measure extends ASTNode {
-}
-
-// TODO: idea: for stuff like tracking state when traversing the abstract syntax tree for stuff like converting to xml or linting
-// xml or linting, we can do something similar to what eslint does like this: have multiple StateUnits that keep track of individual pieces of state.
-// so for tracking time signatures which are abovefor example, we can have something like the following StateUnit:
-// {
-//      docs: {
-//          id: "TimeSignatureState"
-//      }
-//      "TimeSig:enter" = (context) => {
-//          //you can get the current state by doing something like:
-//          context.getStateUnit(this.doc.id)
-//          registerStateChange<state unit type>(this.doc.id, (state) => {
-//              //state is the actual piece of the whole state we have
-//              let newState.timeSigHistory = [state.timeSigHistory..., EditorState.textAt(context.treeCursor.node.from, context.treeCursor.node.to).parseOutTimeSignature()];
-//              return newState;
-//
-//          })
-//      }
-//      "TabBlock:exit" = (context) => {
-//          //go back to default time signature after this TabBlock (that is the feature we want to implement for this state unit)
-//          registerStateChange<type>(this.doc.id, (state) => [defaultTimeSigState])
-//      }
+// export class Measure extends ASTNode {
 // }
-
-// we can also have a StateUnit that keeps track of the current linenames: when it enters a TabBlock, it gets its measure line names 
-// from its first measure (if it has line names) or it gets a certain default tuning and sets it as the state and when we enter a different
-// TabBlock, the line names change
