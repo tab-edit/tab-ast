@@ -1,7 +1,7 @@
 import { ensureSyntaxTree, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
-import { TabFragment, TabTree } from "../tree/TabFragment";
+import { TabFragment, TabTree } from "../tree/tab_fragment";
 
 class Range {
     constructor(readonly from: number, readonly to: number) {}

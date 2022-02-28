@@ -1,6 +1,7 @@
 import { EditorState } from "@codemirror/state";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
-import { ASTNode, SyntaxNodeTypes, TabSegment } from "./nodes";
+import { SyntaxNodeTypes } from "./nodes";
+import { LinearParser } from "../parsers/node_level_parser";
 import { FragmentCursor } from "./cursors";
 
 export class TabFragment {
@@ -63,70 +64,6 @@ export class TabFragment {
         return false;
     }
 }
-
-
-
-/// insertAt() operations are expensive, so this LinearParser data structure does a pre-order parsing more efficiently using singly-linked lists
-export class LinearParser {
-    // TODO: we can potentially make this result to be a 2-d array of numbers where 
-    // each array starts with a number representing the node type and a number representing the length
-    // of the array it and its children occupy, and the rest of the 
-    // numbers are the node's ranges. this requires very minimal changes to implement
-    // **compare efficiency of having a number telling how many indices the ranges occupy, vs having 2d array with one node being an array
-    // ** so potentially: [node1type, node1length, node1rangelength, node1ranges..., node2type, ...] (i think this will be better but might not work cuz node1length now has to take into account the range length of all its nested childeren)
-    // ** or potentially: [[node1type, node1length, node1ranges...], [node2type...], ...]
-    // and make sure to make it a Uint16array
-    // important consideration - it might be better to go with what i already had, array of class objects: https://stackoverflow.com/questions/33004572/java-performance-memory-consumption-class-vs-array
-    private nodeSet: ASTNode[] = [];
-    private head: LPNode | null = null;
-    constructor(
-        initialNode: SyntaxNode,
-        /// The index of all the parsed content will be relative to this offset
-        /// This is usually the index of the source TabFragment, to make 
-        /// for efficient relocation of TabFragments
-        readonly offset: number
-    ) {
-        if (initialNode.name!=TabFragment.AnchorNode) throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
-        let initialContent = [new TabSegment({[TabFragment.AnchorNode]: [initialNode]}, offset)]
-        this.head = new LPNode(initialContent, null);
-    }
-
-    private ancestryStack: number[] = [];
-    advance(): ASTNode[] | null {
-        if (!this.head) return this.nodeSet;
-        let content = this.head.getNextContent();
-        if (!content) {
-            this.head = this.head.next;
-            this.ancestryStack.pop();
-            return null;
-        }
-
-        this.nodeSet.push(content);
-        this.ancestryStack.push(this.nodeSet.length-1);
-        let children = content.parse();
-        for (let ancestor of this.ancestryStack) {
-            this.nodeSet[ancestor].increaseLength(children);
-        }
-        this.head = new LPNode(children, this.head);
-        return null;
-    }
-    get isDone() { return this.head==null }
-}
-
-class LPNode {
-    private contentPointer: number = 0;
-    constructor(
-        private content: ASTNode[], 
-        public next: LPNode | null
-    ) {}
-
-    getNextContent(): ASTNode | null {
-        if (this.contentPointer >= this.content.length) return null;
-        return this.content[this.contentPointer++];
-    }
-}
-
-
 
 
 export class TabTree {

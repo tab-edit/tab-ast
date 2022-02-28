@@ -1,6 +1,6 @@
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { ASTNode, SingleSpanNode } from "./nodes";
-import { TabFragment } from "./TabFragment";
+import { TabFragment } from "./tab_fragment";
 
 interface Cursor {
     name: string;

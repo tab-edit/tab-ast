@@ -2,8 +2,8 @@
 import { ChangeDesc, EditorState, Extension, Facet, StateEffect, StateField, Transaction } from "@codemirror/state";
 import { EditorView, logException, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { ChangedRange } from "@lezer/common";
-import { TabParser, PartialTabParse } from "./extension/parse";
-import { TabFragment, TabTree } from "./tree/TabFragment";
+import { TabParser, PartialTabParse } from "./parsers/fragment_level_parsing";
+import { TabFragment, TabTree } from "./tree/tab_fragment";
 
 // This mirrors the `Language` class in @codemirror/language
 class TabLanguage {
