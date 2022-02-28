@@ -1,9 +1,11 @@
 import { EditorState } from "@codemirror/state";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 import { ASTNode, SyntaxNodeTypes, TabSegment } from "./nodes";
+import { FragmentCursor } from "./cursors";
 
 export class TabFragment {
-    get name() { return SyntaxNodeTypes.TabSegment }
+    // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
+    static AnchorNode: string = SyntaxNodeTypes.TabSegment;
 
     constructor(
         readonly from: number,
@@ -13,13 +15,13 @@ export class TabFragment {
     ) {
         if (linearParser) return;
         if (!rootNode) throw new Error("rootNode must be present if no linearParser is provided");
-        if (rootNode.name!=SyntaxNodeTypes.TabSegment) throw new Error("Incorrect node type used.");
+        if (rootNode.name!=TabFragment.AnchorNode) throw new Error("Incorrect node type used.");
         this.linearParser = new LinearParser(rootNode, this.from);
     }
 
-    advance():FragmentNodeCursor | null {
+    advance(): FragmentCursor | null {
         let nodeSet = this.linearParser.advance();
-        return nodeSet ? new FragmentNodeCursor(nodeSet) : null;
+        return nodeSet ? new FragmentCursor(nodeSet) : null;
     }
 
     
@@ -28,7 +30,7 @@ export class TabFragment {
     static startParse(node: SyntaxNode, editorState: EditorState): TabFragment | null {
         let source = editorState.doc.toString();
         if (node.from >= source.length || node.to > source.length) return null;
-        if (node.name != SyntaxNodeTypes.TabSegment) return null;
+        if (node.name != TabFragment.AnchorNode) return null;
         return new TabFragment(node.from, node.to, node);
     }
 
@@ -65,7 +67,7 @@ export class TabFragment {
 
 
 /// insertAt() operations are expensive, so this LinearParser data structure does a pre-order parsing more efficiently using singly-linked lists
-class LinearParser {
+export class LinearParser {
     // TODO: we can potentially make this result to be a 2-d array of numbers where 
     // each array starts with a number representing the node type and a number representing the length
     // of the array it and its children occupy, and the rest of the 
@@ -84,8 +86,8 @@ class LinearParser {
         /// for efficient relocation of TabFragments
         readonly offset: number
     ) {
-        if (initialNode.name!=SyntaxNodeTypes.TabSegment) throw new Error("Parsing starting from a node other than the TabSegment node is not supported at this time.");
-        let initialContent = [new TabSegment({[SyntaxNodeTypes.TabSegment]: [initialNode]}, offset)]
+        if (initialNode.name!=TabFragment.AnchorNode) throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
+        let initialContent = [new TabSegment({[TabFragment.AnchorNode]: [initialNode]}, offset)]
         this.head = new LPNode(initialContent, null);
     }
 
@@ -135,8 +137,3 @@ export class TabTree {
     static readonly empty = new TabTree();
 }
 
-// TODO: implement TabFragmentCursor that traverses TabFragments
-class FragmentNodeCursor {
-    constructor(readonly nodeSet:ASTNode[]) {}
-    // TODO: implement class (nextSibling, prevSibling, parent, firstChild...)
-}

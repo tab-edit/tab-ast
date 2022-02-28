@@ -1,6 +1,5 @@
-import { syntaxTree } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
-import { SyntaxNode } from "@lezer/common";
+import { SyntaxNode, TreeCursor } from "@lezer/common";
+import { AnchoredSyntaxCursor } from "./cursors";
 
 export enum SyntaxNodeTypes {
     Tablature = "Tablature",
@@ -9,6 +8,11 @@ export enum SyntaxNodeTypes {
     TabString = "TabString",
     MeasureLineName = "MeasureLineName",
     MeasureLine = "MeasureLine",
+
+    Note = "Note",
+    NoteDecorator = "NoteDecorator",
+    NoteConnector = "NoteConnector",
+    ConnectorSymbol = "ConnectorSymbol",
 
     Hammer = "Hammer",
     Pull = "Pull",
@@ -30,30 +34,30 @@ export enum SyntaxNodeTypes {
     InvalidToken = "⚠"
 }
 
+export interface SingleSpanNode {
+    getRootNodeTraverser(): AnchoredSyntaxCursor | null;
+}
 export abstract class ASTNode {
-    private ranges: Uint16Array;
+    public ranges: Uint16Array;
     constructor(
         /// mapping of SyntaxNode type => syntax nodes where the syntax nodes are the source
         /// nodes of the parse tree from which the ASTNode is being built.
         /// currently, once i lazily parse only once, i dispose of sourceNodes (set to null) for efficiency(TODO: i might remove this feature as it might not be a good idea to dispose)
         protected sourceNodes: {[type:string]:SyntaxNode[]},
         readonly offset: number
-        ) {
-            let rngs = []
-            for (let name in sourceNodes) {
-                for (let node of sourceNodes[name]) {
-                    rngs.push(node.from-offset);
-                    rngs.push(node.to-offset);
-                }
-            }
-            this.ranges = Uint16Array.from(rngs);
-        }
-        protected parsed = false;
-        get isParsed() { return this.parsed }
-    public parse(): ASTNode[] {
-        this.disposeSourceNodes();
-        return [];
+    ) {
+        this.ranges = Uint16Array.from(this.computeRanges(sourceNodes, offset));
     }
+
+    // parse up-keep
+    protected parsed = false;
+    get isParsed() { return this.parsed }
+    public parse(): ASTNode[] {
+        if (this.parsed) return [];
+        this.parsed = true;
+        return this.createChildren();
+    }
+    protected abstract createChildren(): ASTNode[];
     
     protected disposeSourceNodes() {
         // TODO: consider if we should preserve sourceNodes
@@ -64,14 +68,26 @@ export abstract class ASTNode {
     private _length = 1;
     public increaseLength(children: ASTNode[]) { this._length += children.length }
     get length() { return this._length; }
+
+
+    protected computeRanges(sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): number[] {
+        let rngs:number[] = []
+        for (let name in sourceNodes) {
+            for (let node of sourceNodes[name]) {
+                rngs.push(node.from-offset);
+                rngs.push(node.to-offset);
+            }
+        }
+        return rngs;
+    }
 }
 
 
-export class TabSegment extends ASTNode {
-    parse(): TabBlock[] {
-        if (this.parsed) return [];
-        this.parsed = true;
-        
+export class TabSegment extends ASTNode implements SingleSpanNode {
+    public getRootNodeTraverser(): AnchoredSyntaxCursor {
+        return new AnchoredSyntaxCursor(this.sourceNodes[SyntaxNodeTypes.TabSegment][0], this.offset);
+    }
+    protected createChildren(): TabBlock[] {
         let modifiers = this.sourceNodes[SyntaxNodeTypes.TabSegment][0].getChildren(SyntaxNodeTypes.Modifier);
 
         let strings:SyntaxNode[][] = [];
@@ -98,9 +114,9 @@ export class TabSegment extends ASTNode {
                     anchor = blockAnchors[bI];
                     if (anchor.to <= string.from) continue;
                     if (string.to <= anchor.from) {
-                        // it doesn't overlap with any existing blocks
+                        // it doesn't overlap with any existing blocks, but it comes right before this current block
                         if (bI==0) {
-                            blocks.unshift([string]);; //create a new block
+                            blocks.unshift([string]); //create a new block
                             blockAnchors.unshift(string); //set this as the block's anchor
                         } else {
                             blocks.splice(bI, 0, [string]);
@@ -112,9 +128,12 @@ export class TabSegment extends ASTNode {
                     // at this point, `string` definitely overlaps with `anchor`
                     blocks[bI].push(string);
                     if (string.from < anchor.from) blockAnchors[bI] = string; // change this block's anchor
+                    isStringPlaced = true;
+                    break;
                 }
                 if (!isStringPlaced) {
-                    //string doesn't belong to any existing blocks. create new block that comes after all the existing ones.
+                    // string doesn't belong to any existing blocks, but comes after all existing blocks. 
+                    // create new block that comes after all the existing ones.
                     blocks.push([string]);
                     blockAnchors.push(string);
                     continue;
@@ -158,7 +177,7 @@ export class TabSegment extends ASTNode {
 }
 
 export class TabBlock extends ASTNode {
-    parse() {
+    protected createChildren() {
         if (this.parsed) return [];
         this.parsed = true;
 
@@ -196,30 +215,205 @@ export class TabBlock extends ASTNode {
 }
 
 export class Measure extends ASTNode {
-    parse() {
+    protected createChildren(): Sound[] {
+        if (this.parsed) return [];
+        this.parsed = true;
+        
+        let lines = this.sourceNodes[SyntaxNodeTypes.MeasureLine];
+        let measureComponentsByLine: SyntaxNode[][] = [];
+        let mcAnchors: number[][] = [];
+        for (let i=0; i<lines.length; i++) {
+            let line = lines[i];
+            measureComponentsByLine[i] = [];
+            let cursor = line.cursor;
+            if (!cursor.firstChild()) continue;
+            let cursorCopy = cursor.node.cursor;
+            do {
+                if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
+                    measureComponentsByLine[i].push(cursorCopy.node);
+                    if (cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
+                        mcAnchors[i].push((cursorCopy.node.getChild(SyntaxNodeTypes.Note).from || cursorCopy.from) - line.from);
+                    } else mcAnchors[i].push(cursorCopy.from - line.from);
+                    continue;
+                }
+                if (!cursorCopy.node.type.is(SyntaxNodeTypes.NoteConnector)) break;
+                measureComponentsByLine[i].push(cursorCopy.node);
+                let connector = cursorCopy.node;
+                let firstNote = connector.getChild(SyntaxNodeTypes.Note) || connector.getChild(SyntaxNodeTypes.NoteDecorator);
+                if (firstNote) {
+                    mcAnchors[i].push(firstNote.from - line.from);
+                    cursorCopy = firstNote.cursor;
+                } else {
+                    mcAnchors[i].push(connector.from - line.from);
+                }
+            } while (cursorCopy.nextSibling());
+        }
+
+        // similar concept used in grouping TabStrings to make TabBlocks in the TabSegment.createChildren() class
+        let sounds: SyntaxNode[][] = [];
+        let soundAnchors: number[] = [];
+        let componentPointers: number[] = new Array(lines.length).fill(0);
+
+        let component: SyntaxNode, componentAnchor: number, soundIdx: number, firstUncompletedSoundIdx: number, hasGroupedAllSounds: boolean, isComponentPlaced: boolean;
+        do {
+            hasGroupedAllSounds = true;
+            for (let lineNum=0; lineNum<lines.length; lineNum++) {
+                component = measureComponentsByLine[lineNum][componentPointers[lineNum]];
+                componentAnchor = mcAnchors[lineNum][componentPointers[lineNum]];
+
+                hasGroupedAllSounds = hasGroupedAllSounds && !!component;
+                if (!component) continue;
+                
+                isComponentPlaced = false;
+                for (soundIdx=firstUncompletedSoundIdx; soundIdx<sounds.length; soundIdx++) {
+                    if (soundAnchors[soundIdx] <= componentAnchor) continue;
+                    if (componentAnchor <= soundAnchors[soundIdx]) {
+                        // component doesn't belong to any existing sound, but comes right before this current sound
+                        if (soundIdx==0) {
+                            sounds.unshift([component]);
+                            soundAnchors.unshift(componentAnchor);
+                        } else {
+                            sounds.splice(soundIdx, 0, [component]);
+                            soundAnchors.splice(soundIdx, 0, componentAnchor);
+                        }
+                        isComponentPlaced = true;
+                        break;
+                    }
+                    sounds[soundIdx].push(component);
+                    isComponentPlaced = true;
+                    break;
+                }
+                // at this point we know this component does not belong to any exisiting sounds but comes after all existing sounds.
+                if (!isComponentPlaced) {
+                    sounds.push([component]);
+                    soundAnchors.push(componentAnchor);
+                } else {
+                    componentPointers[lineNum] = componentPointers[lineNum] + 1;
+                }
+            }
+            // at this point, we have definitely completed a sound
+            firstUncompletedSoundIdx++;
+        } while (!hasGroupedAllSounds)
+        
+        let result: Sound[] = []
+        for (let sound of sounds) {
+            result.push(new Sound({MultiType: sound}, this.offset))
+        }
+
         return [];
     }
 }
 
 export class Sound extends ASTNode {
-    parse() {
-        return [];
+    protected createChildren() {
+        let components = this.sourceNodes.MultiType; // TODO: MultiType does not correspond to any node in the Syntax Tree. Think of a better way to transfer this data
+        let result: ASTNode[] = [];
+        for (let component of components) {
+            if (component.type.is(SyntaxNodeTypes.Note)) result.push(Note.from(component.name, {[component.name]: [component]}, this.offset));
+            else if (component.type.is(SyntaxNodeTypes.NoteDecorator)) result.push(NoteDecorator.from(component.name, {[component.name]: [component]}, this.offset));
+            else if (component.type.is(SyntaxNodeTypes.NoteConnector)) result.push(NoteConnector.from(component.name, {[component.name]: [component]}, this.offset));
+        }
+
+        return result;
     }
 }
 
-export abstract class Note extends ASTNode {}
-export class Fret extends Note {}
-
-class MeasureLineName extends ASTNode {}
+class MeasureLineName extends ASTNode implements SingleSpanNode {
+    public getRootNodeTraverser(): AnchoredSyntaxCursor {
+        return new AnchoredSyntaxCursor(this.sourceNodes[SyntaxNodeTypes.MeasureLineName][0], this.offset);
+    }
+    protected createChildren() { return [] } 
+}
 class LineNaming extends ASTNode {
-    parse() {
+    protected createChildren(): MeasureLineName[] {
         let names = this.sourceNodes[SyntaxNodeTypes.MeasureLineName];
         return names.map((name) => new MeasureLineName({[SyntaxNodeTypes.MeasureLineName]: [name]}, this.offset));
     }
 }
 
+export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
+    abstract getType(): string;
+    private notes: SyntaxNode[];
+
+    public getRootNodeTraverser(): AnchoredSyntaxCursor {
+        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
+    }
+    
+    // the raw parser parses note connectors recursively, so 5h3p2 would
+    // parse as Hammer(5, Pull(3,2)), making the hammeron encompass also the fret 2
+    // but the hammer relationship only connects 5 and 3, so we override the range computation to
+    // reflect this fact.
+    protected computeRanges(sourceNodes: { [type: string]: SyntaxNode[]; }, offset: number): any[] {
+        let connector = sourceNodes[this.getType()][0];
+        let notes = connector.getChildren(SyntaxNodeTypes.Note);
+        let symbol = connector.getChild(SyntaxNodeTypes.ConnectorSymbol);
+        this.notes = this.notes.slice(0,2); // only first two notes make up the relationship
+        let fromNode = notes[0] || symbol;
+        let toNode = notes[1] || symbol;
+        return [fromNode.from - offset, toNode.to - offset];
+    }
+
+    protected createChildren() { return this.notes.map((node) => Note.from(node.name, {[node.name]: [node]}, this.offset)); }
+    
+    static isNoteConnector(name: string) { return name in [SyntaxNodeTypes.Hammer, SyntaxNodeTypes.Pull, SyntaxNodeTypes.Slide] }
+
+    static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): NoteConnector {
+        switch(type) {
+            case SyntaxNodeTypes.Hammer: return new Hammer(sourceNodes, offset);
+            case SyntaxNodeTypes.Pull: return new Pull(sourceNodes, offset);
+            case SyntaxNodeTypes.Slide: return new Slide(sourceNodes, offset);
+        }
+        return null;
+    }
+}
+export class Hammer extends NoteConnector { getType() { return SyntaxNodeTypes.Hammer } }
+export class Pull extends NoteConnector { getType() { return SyntaxNodeTypes.Hammer } }
+export class Slide extends NoteConnector { getType() { return SyntaxNodeTypes.Hammer } }
+
+export abstract class NoteDecorator extends ASTNode implements SingleSpanNode {
+    abstract getType(): string;
+    public getRootNodeTraverser(): AnchoredSyntaxCursor {
+        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
+    }
+    protected createChildren(): ASTNode[] {
+        let note = this.sourceNodes[this.getType()][0].getChild(SyntaxNodeTypes.Note);
+        return [Note.from(note.name, {[note.name]: [note]}, this.offset)];
+    }
+    static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): NoteDecorator {
+        switch(type) {
+            case SyntaxNodeTypes.Grace: return new Grace(sourceNodes, offset);
+            case SyntaxNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
+        }
+        return null;
+    }
+}
+export class Grace extends NoteDecorator { getType() { return SyntaxNodeTypes.Grace } }
+export class Harmonic extends NoteDecorator { getType() { return SyntaxNodeTypes.Harmonic } }
+
+export abstract class Note extends ASTNode  implements SingleSpanNode {
+    abstract getType(): string;
+    protected createChildren() { return [] }
+    public getRootNodeTraverser(): AnchoredSyntaxCursor {
+        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
+    }
+    static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): Note {
+        switch(type) {
+            case SyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
+        }
+        return null;
+    }
+}
+export class Fret extends Note { getType(): string { return SyntaxNodeTypes.Fret } }
+
 // modifiers
-abstract class Modifier extends ASTNode {
+abstract class Modifier extends ASTNode  implements SingleSpanNode {
+    abstract getType(): string;
+    public getRootNodeTraverser(): AnchoredSyntaxCursor {
+        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
+    }
+    protected createChildren(): ASTNode[] {
+        return [];
+    }
     static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): Modifier {
         switch(type) {
             case SyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
@@ -229,6 +423,6 @@ abstract class Modifier extends ASTNode {
         return null;
     }
 }
-class Repeat extends Modifier {}
-class TimeSignature extends Modifier {}
-class Multiplier extends Modifier {}
+class Repeat extends Modifier { getType() { return SyntaxNodeTypes.Repeat } }
+class TimeSignature extends Modifier { getType() { return SyntaxNodeTypes.TimeSignature } }
+class Multiplier extends Modifier { getType(): string { return SyntaxNodeTypes.Multiplier } }
