@@ -1,7 +1,10 @@
+import { EditorState } from "@codemirror/state";
 import { parser } from "parser-tablature";
+import { FragmentCursor } from "./tree/cursors";
+import { TabFragment } from "./tree/tab_fragment";
 
 let str = `
-E|---------------------------||-15p12-10p9-12p10-6p5-8p6-----|
+E|---------------------------||-15p12h10p9-12p10-6p5-8p6-----|
 B|---------------------------||--------------------------8-5-|
 G|---------------------------||------------------------------|
 D|--[7]----------------------||------------------------------|
@@ -14,20 +17,27 @@ G|------------------3-------|-2-----------------------|
 D|------------------5-------|-2-----------------------|
 A|--------------------------|-0-----------------------|
 E|--------------------------|-------------------------|
-`
+` 
+
+let editorState = EditorState.create({
+    doc: str   
+})
+
 let tree = parser.parse(str);
-let context = [];
-let parent = [];
 console.log(prettyPrint(tree.toString()));
 let x = tree.cursor()
 x.firstChild()
-x.firstChild()
-x.firstChild()
-x.firstChild()
-let printDeets = (x) => console.log(`name:${x.name} from:${x.from}(${str.charAt(x.from)}) to:${x.to}(${str.charAt(x.to)})`)
-printDeets(x)
-x.nextSibling()
-printDeets(x)
+let tabFragment = TabFragment.startParse(x.node, editorState);
+let cursor: FragmentCursor;
+while (!(cursor = tabFragment.advance())) {}
+prettyPrint(cursor.printTree())
+// x.firstChild()
+// x.firstChild()
+// x.firstChild()
+// let printDeets = (x) => console.log(`name:${x.name} from:${x.from}(${str.charAt(x.from)}) to:${x.to}(${str.charAt(x.to)})`)
+// printDeets(x)
+// x.nextSibling()
+// printDeets(x)
 
 
 

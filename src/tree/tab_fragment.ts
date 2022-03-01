@@ -1,8 +1,8 @@
 import { EditorState } from "@codemirror/state";
-import { ChangedRange, SyntaxNode } from "@lezer/common";
 import { SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { FragmentCursor } from "./cursors";
+import { ChangedRange, SyntaxNode } from "@lezer/common";
 
 export class TabFragment {
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
@@ -12,12 +12,13 @@ export class TabFragment {
         readonly from: number,
         readonly to: number,
         rootNode: SyntaxNode | null,
+        editorState: EditorState,
         private linearParser?: LinearParser
     ) {
         if (linearParser) return;
         if (!rootNode) throw new Error("rootNode must be present if no linearParser is provided");
         if (rootNode.name!=TabFragment.AnchorNode) throw new Error("Incorrect node type used.");
-        this.linearParser = new LinearParser(rootNode, this.from);
+        this.linearParser = new LinearParser(rootNode, this.from, editorState);
     }
 
     advance(): FragmentCursor | null {
@@ -29,10 +30,8 @@ export class TabFragment {
     /// starts parsing this TabFragment from the raw SyntaxNode. this is made to be 
     /// incremental to prevent blocking when there are a lot of Tab Blocks on the same line
     static startParse(node: SyntaxNode, editorState: EditorState): TabFragment | null {
-        let source = editorState.doc.toString();
-        if (node.from >= source.length || node.to > source.length) return null;
         if (node.name != TabFragment.AnchorNode) return null;
-        return new TabFragment(node.from, node.to, node);
+        return new TabFragment(node.from, node.to, node, editorState);
     }
 
     /// Apply a set of edits to an array of fragments, removing
@@ -55,7 +54,7 @@ export class TabFragment {
 
     offset(delta: number):TabFragment|null {
         if (this.from+delta < 0) return null;
-        return new TabFragment(this.from+delta, this.to+delta, null, this.linearParser);
+        return new TabFragment(this.from+delta, this.to+delta, null, null, this.linearParser);
     }
     
     get isParsed() { return !this.linearParser.isDone }

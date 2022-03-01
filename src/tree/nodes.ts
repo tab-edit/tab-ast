@@ -1,3 +1,4 @@
+import { EditorState } from "@codemirror/state";
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { AnchoredSyntaxCursor } from "./cursors";
 
@@ -48,16 +49,16 @@ export abstract class ASTNode {
     ) {
         this.ranges = Uint16Array.from(this.computeRanges(sourceNodes, offset));
     }
-
+    get name() { return this.constructor.name; }
     // parse up-keep
     protected parsed = false;
     get isParsed() { return this.parsed }
-    public parse(): ASTNode[] {
+    public parse(editorState: EditorState): ASTNode[] {
         if (this.parsed) return [];
         this.parsed = true;
-        return this.createChildren();
+        return this.createChildren(editorState);
     }
-    protected abstract createChildren(): ASTNode[];
+    protected abstract createChildren(editorState: EditorState): ASTNode[];
     
     protected disposeSourceNodes() {
         // TODO: consider if we should preserve sourceNodes
@@ -87,7 +88,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
     public getRootNodeTraverser(): AnchoredSyntaxCursor {
         return new AnchoredSyntaxCursor(this.sourceNodes[SyntaxNodeTypes.TabSegment][0], this.offset);
     }
-    protected createChildren(): TabBlock[] {
+    protected createChildren(editorState: EditorState): TabBlock[] {
         let modifiers = this.sourceNodes[SyntaxNodeTypes.TabSegment][0].getChildren(SyntaxNodeTypes.Modifier);
 
         let strings:SyntaxNode[][] = [];
@@ -95,10 +96,10 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
             strings.push(line.getChildren(SyntaxNodeTypes.TabString).reverse()); //reversed for efficiency in performing remove operations
         }
 
-        let blockAnchors:SyntaxNode[] = [];
-        let blocks:SyntaxNode[][] //each array of syntax node is a block
+        let blocks:SyntaxNode[][] = [] //each array of syntax node is a block
+        let blockAnchors:{to: number, from: number}[] = [];
 
-        let string:SyntaxNode, stringLine:SyntaxNode[], bI: number, isStringPlaced:boolean, anchor:SyntaxNode; // variables used in inner loops, but defined outside loop for efficiency
+        let string:SyntaxNode, stringLine:SyntaxNode[], bI: number, isStringPlaced:boolean, anchor:{to: number, from: number}; // variables used in inner loops, but defined outside loop for efficiency
         let firstUncompletedBlockIdx = 0;
         let hasGroupedAllStrings: boolean;
         do {
@@ -109,25 +110,26 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
                 if (stringLine.length==0) continue;
                 
                 string = stringLine.pop();
+                let stringRange = {from: this.lineDistance(string.from, editorState), to: this.lineDistance(string.to, editorState)};
                 isStringPlaced = false;
                 for (bI=firstUncompletedBlockIdx; bI<blockAnchors.length; bI++) {
                     anchor = blockAnchors[bI];
-                    if (anchor.to <= string.from) continue;
-                    if (string.to <= anchor.from) {
+                    if (anchor.to <= stringRange.from) continue;
+                    if (stringRange.to <= anchor.from) {
                         // it doesn't overlap with any existing blocks, but it comes right before this current block
                         if (bI==0) {
                             blocks.unshift([string]); //create a new block
-                            blockAnchors.unshift(string); //set this as the block's anchor
+                            blockAnchors.unshift(stringRange); //set this as the block's anchor
                         } else {
                             blocks.splice(bI, 0, [string]);
-                            blockAnchors.splice(bI, 0, string);
+                            blockAnchors.splice(bI, 0, stringRange);
                         }
                         isStringPlaced = true;
                         break;
                     }
                     // at this point, `string` definitely overlaps with `anchor`
                     blocks[bI].push(string);
-                    if (string.from < anchor.from) blockAnchors[bI] = string; // change this block's anchor
+                    if (stringRange.from < anchor.from) blockAnchors[bI] = stringRange; // change this block's anchor
                     isStringPlaced = true;
                     break;
                 }
@@ -135,7 +137,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
                     // string doesn't belong to any existing blocks, but comes after all existing blocks. 
                     // create new block that comes after all the existing ones.
                     blocks.push([string]);
-                    blockAnchors.push(string);
+                    blockAnchors.push(stringRange);
                     continue;
                 }
             }
@@ -145,16 +147,18 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
 
         // now we have all the blocks and their anchor nodes. now we use those anchor nodes to know what modifiers belong to what block
         let blockModifiers:SyntaxNode[][] = [];
+        let modifierRange: {from: number, to: number};
         bI = 0;
         for (let modifier of modifiers) {
+            modifierRange = {from: this.lineDistance(modifier.from, editorState), to: this.lineDistance(modifier.to, editorState)}
             anchor = blockAnchors[bI];
-            while (anchor && anchor.to <= modifier.from) {
+            if (!blockModifiers[bI]) blockModifiers.push([]);
+            while (anchor && anchor.to <= modifierRange.from) {
                 anchor = blockAnchors[++bI];
             }
-            if (!anchor || anchor.from >= modifier.to) {
+            if (!anchor || anchor.from >= modifierRange.to) {
                 // if this modifier belongs to no block, add it to the nearest block on its left (and if none, the nearest on its right)
                 let idx = bI==0 ? 0 : bI-1;
-                if (!blockModifiers[idx]) blockModifiers[idx] = [];
                 blockModifiers[idx].push(modifier);
                 continue;
             }
@@ -164,7 +168,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
         let tabBlocks:TabBlock[] = [];
         for (bI=0; bI<blocks.length; bI++) {
             tabBlocks.push(new TabBlock({
-                    [SyntaxNodeTypes.Modifier]: blockModifiers[bI],
+                    [SyntaxNodeTypes.Modifier]: blockModifiers[bI] || [],
                     [SyntaxNodeTypes.TabString]: blocks[bI]
                 },
                 this.offset
@@ -174,13 +178,14 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
         this.disposeSourceNodes();
         return tabBlocks;
     }
+
+    private lineDistance(idx: number, editorState: EditorState) {
+        return idx - editorState.doc.lineAt(idx).from;
+    }
 }
 
 export class TabBlock extends ASTNode {
     protected createChildren() {
-        if (this.parsed) return [];
-        this.parsed = true;
-
         let result: ASTNode[] = [];
 
         let modifiers = this.sourceNodes[SyntaxNodeTypes.Modifier];
@@ -215,36 +220,40 @@ export class TabBlock extends ASTNode {
 }
 
 export class Measure extends ASTNode {
-    protected createChildren(): Sound[] {
-        if (this.parsed) return [];
-        this.parsed = true;
-        
+    protected createChildren(editorState: EditorState): Sound[] {
         let lines = this.sourceNodes[SyntaxNodeTypes.MeasureLine];
         let measureComponentsByLine: SyntaxNode[][] = [];
         let mcAnchors: number[][] = [];
         for (let i=0; i<lines.length; i++) {
             let line = lines[i];
             measureComponentsByLine[i] = [];
+            mcAnchors[i] = [];
             let cursor = line.cursor;
             if (!cursor.firstChild()) continue;
             let cursorCopy = cursor.node.cursor;
+            let connectorRecursionRoot: TreeCursor = null;
             do {
                 if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
                     measureComponentsByLine[i].push(cursorCopy.node);
                     if (cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
-                        mcAnchors[i].push((cursorCopy.node.getChild(SyntaxNodeTypes.Note).from || cursorCopy.from) - line.from);
-                    } else mcAnchors[i].push(cursorCopy.from - line.from);
+                        mcAnchors[i].push(this.charDistance(line.from, (cursorCopy.node.getChild(SyntaxNodeTypes.Note).from || cursorCopy.from), editorState));
+                    } else mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, editorState));
+                    if (connectorRecursionRoot!=null) {
+                        cursorCopy = connectorRecursionRoot;
+                        connectorRecursionRoot = null;
+                    }
                     continue;
                 }
                 if (!cursorCopy.node.type.is(SyntaxNodeTypes.NoteConnector)) break;
+                if (!connectorRecursionRoot) connectorRecursionRoot = cursorCopy.node.cursor;
                 measureComponentsByLine[i].push(cursorCopy.node);
                 let connector = cursorCopy.node;
                 let firstNote = connector.getChild(SyntaxNodeTypes.Note) || connector.getChild(SyntaxNodeTypes.NoteDecorator);
                 if (firstNote) {
-                    mcAnchors[i].push(firstNote.from - line.from);
+                    mcAnchors[i].push(this.charDistance(line.from, firstNote.from, editorState));
                     cursorCopy = firstNote.cursor;
                 } else {
-                    mcAnchors[i].push(connector.from - line.from);
+                    mcAnchors[i].push(this.charDistance(line.from, connector.from, editorState));
                 }
             } while (cursorCopy.nextSibling());
         }
@@ -254,20 +263,21 @@ export class Measure extends ASTNode {
         let soundAnchors: number[] = [];
         let componentPointers: number[] = new Array(lines.length).fill(0);
 
-        let component: SyntaxNode, componentAnchor: number, soundIdx: number, firstUncompletedSoundIdx: number, hasGroupedAllSounds: boolean, isComponentPlaced: boolean;
+        let component: SyntaxNode, componentAnchor: number, soundIdx: number, hasGroupedAllSounds: boolean, isComponentPlaced: boolean;
+        let firstUncompletedSoundIdx = 0;
         do {
             hasGroupedAllSounds = true;
             for (let lineNum=0; lineNum<lines.length; lineNum++) {
                 component = measureComponentsByLine[lineNum][componentPointers[lineNum]];
                 componentAnchor = mcAnchors[lineNum][componentPointers[lineNum]];
 
-                hasGroupedAllSounds = hasGroupedAllSounds && !!component;
+                hasGroupedAllSounds = hasGroupedAllSounds && !component;
                 if (!component) continue;
                 
                 isComponentPlaced = false;
                 for (soundIdx=firstUncompletedSoundIdx; soundIdx<sounds.length; soundIdx++) {
-                    if (soundAnchors[soundIdx] <= componentAnchor) continue;
-                    if (componentAnchor <= soundAnchors[soundIdx]) {
+                    if (soundAnchors[soundIdx] < componentAnchor) continue;
+                    if (componentAnchor < soundAnchors[soundIdx]) {
                         // component doesn't belong to any existing sound, but comes right before this current sound
                         if (soundIdx==0) {
                             sounds.unshift([component]);
@@ -287,9 +297,8 @@ export class Measure extends ASTNode {
                 if (!isComponentPlaced) {
                     sounds.push([component]);
                     soundAnchors.push(componentAnchor);
-                } else {
-                    componentPointers[lineNum] = componentPointers[lineNum] + 1;
                 }
+                componentPointers[lineNum] = componentPointers[lineNum] + 1;
             }
             // at this point, we have definitely completed a sound
             firstUncompletedSoundIdx++;
@@ -300,7 +309,11 @@ export class Measure extends ASTNode {
             result.push(new Sound({MultiType: sound}, this.offset))
         }
 
-        return [];
+        return result;
+    }
+
+    private charDistance(from: number, to: number, editorState: EditorState) {
+        return editorState.doc.slice(from, to).toString().replace(/\s/, '').length;
     }
 }
 
@@ -367,8 +380,8 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
     }
 }
 export class Hammer extends NoteConnector { getType() { return SyntaxNodeTypes.Hammer } }
-export class Pull extends NoteConnector { getType() { return SyntaxNodeTypes.Hammer } }
-export class Slide extends NoteConnector { getType() { return SyntaxNodeTypes.Hammer } }
+export class Pull extends NoteConnector { getType() { return SyntaxNodeTypes.Pull } }
+export class Slide extends NoteConnector { getType() { return SyntaxNodeTypes.Slide } }
 
 export abstract class NoteDecorator extends ASTNode implements SingleSpanNode {
     abstract getType(): string;

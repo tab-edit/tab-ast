@@ -15,7 +15,7 @@ interface Cursor {
 export class FragmentCursor implements Cursor {
     private pointer: number = 0;
     private ancestryTrace: number[] = [];
-    get name() { return this.nodeSet[this.pointer].constructor.name }
+    get name() { return this.nodeSet[this.pointer].name }
     get node() { return Object.freeze(this.nodeSet[this.pointer]) }
     sourceSyntaxNode() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
     constructor(private nodeSet: ASTNode[]) {}
@@ -68,7 +68,24 @@ export class FragmentCursor implements Cursor {
         this.pointer = nextInorder;
         return true;
     }
-
+    printTree() {
+        let currentPointer = this.pointer;
+        let str = this.printTreeRecursiveHelper();
+        this.pointer = currentPointer;
+        return str;
+    }
+    private printTreeRecursiveHelper() {
+        let str = `${this.nodeSet[this.pointer].name}(`;
+        this.firstChild();
+        let first = true;
+        do {
+            if (!first) str += ",";
+            first = false;
+            str += this.printTreeRecursiveHelper();
+        } while (this.nextSibling());
+        str += ")";
+        return str;
+    }
 }
 
 

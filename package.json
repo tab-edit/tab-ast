@@ -4,6 +4,8 @@
   "description": "codemirror 6 extension to generate an ast for music tablature",
   "main": "index.js",
   "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -27,7 +29,6 @@
   },
   "homepage": "https://github.com/Stan15/tab-ast#readme",
   "devDependencies": {
-    "parser-tablature": "file:../parser-tablature",
     "typescript": "^4.5.5"
   },
   "dependencies": {
@@ -35,6 +36,7 @@
     "@codemirror/state": "^0.19.6",
     "@codemirror/view": "^0.19.40",
     "@lezer/common": "^0.15.11",
-    "@lezer/lr": "^0.15.7"
+    "@lezer/lr": "^0.15.7",
+    "parser-tablature": "file:../parser-tablature"
   }
 }

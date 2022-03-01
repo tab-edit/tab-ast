@@ -1,3 +1,4 @@
+import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
 import { ASTNode, TabSegment } from "../tree/nodes";
 import { TabFragment } from "../tree/tab_fragment";
@@ -11,7 +12,8 @@ export class LinearParser {
         /// The index of all the parsed content will be relative to this offset
         /// This is usually the index of the source TabFragment, to make 
         /// for efficient relocation of TabFragments
-        readonly offset: number
+        readonly offset: number,
+        private editorState: EditorState
     ) {
         if (initialNode.name!=TabFragment.AnchorNode) throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
         let initialContent = [new TabSegment({[TabFragment.AnchorNode]: [initialNode]}, offset)]
@@ -30,7 +32,7 @@ export class LinearParser {
 
         this.nodeSet.push(content);
         this.ancestryStack.push(this.nodeSet.length-1);
-        let children = content.parse();
+        let children = content.parse(this.editorState);
         for (let ancestor of this.ancestryStack) {
             this.nodeSet[ancestor].increaseLength(children);
         }
