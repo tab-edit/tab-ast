@@ -5,9 +5,9 @@ import { TabFragment } from "./tree/tab_fragment";
 
 let str = `
 E|---------------------------||-15p12h10p9-12p10-6p5-8p6-----|
-B|---------------------------||--------------------------8-5-|
+B|---------------------------||-     -  - -7---------------------8-5-|
 G|---------------------------||------------------------------|
-D|--[7]----------------------||------------------------------|
+D| -  -[7]----------------------||------------------------------|
 A|--[7]----------------------||------------------------------|
 E|--[7]----------------------||------------------------------|
 
@@ -29,25 +29,14 @@ let x = tree.cursor()
 x.firstChild()
 let tabFragment = TabFragment.startParse(x.node, editorState);
 let cursor: FragmentCursor;
-while (!(cursor = tabFragment.advance())) {}
-prettyPrint(cursor.printTree())
-// x.firstChild()
-// x.firstChild()
-// x.firstChild()
-// let printDeets = (x) => console.log(`name:${x.name} from:${x.from}(${str.charAt(x.from)}) to:${x.to}(${str.charAt(x.to)})`)
-// printDeets(x)
-// x.nextSibling()
-// printDeets(x)
-
-
-
-// tree.iterate({
-//     enter(type, from, to, get) {
-//         context.push({type,from,to,children});
-//         parent.push(context.length-1)
-//     }
-//     leave
-// })
+let i = 0;
+while (!(cursor = tabFragment.advance())) { 
+    i++;
+    if (i==109) {
+        console.log("wait");
+    }
+}
+prettyPrint(cursor.printTree());
 
 
 

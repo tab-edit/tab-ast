@@ -1,6 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
-import { ASTNode, TabSegment } from "../tree/nodes";
+import { ASTNode, Measure, TabSegment } from "../tree/nodes";
 import { TabFragment } from "../tree/tab_fragment";
 
 /// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked list structure
@@ -40,6 +40,24 @@ export class LinearParser {
         return null;
     }
     get isDone() { return this.head==null }
+    private isInvalidCache: boolean | null = null;
+    get isInvalid() {
+        if (this.isInvalidCache!=null) return this.isInvalidCache;
+        if (!this.isDone) return false;
+        let nodeSet = this.advance();
+        if (!nodeSet) return true; //this should never be the case cuz we've finished parsing, but just to be sure...
+
+        let hasMeasureline = false;
+        outer: for (let node of nodeSet) {
+            if (node.name!=Measure.name) continue;
+            for (let i=1; i<node.ranges.length; i+=2) {
+                hasMeasureline = hasMeasureline || this.editorState.doc.slice(node.ranges[i-1], node.ranges[i]).toString().replace(/\s/g, '').length == 0
+                if (hasMeasureline) break outer;
+            }
+        }
+        this.isInvalidCache = hasMeasureline;
+        return this.isInvalidCache;
+    }
 }
 
 class LPNode {

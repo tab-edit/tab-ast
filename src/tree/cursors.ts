@@ -13,14 +13,22 @@ interface Cursor {
 }
 
 export class FragmentCursor implements Cursor {
-    private pointer: number = 0;
-    private ancestryTrace: number[] = [];
+    private constructor(
+        private nodeSet: ASTNode[],
+        private pointer: number = 0,
+        private ancestryTrace: number[] = []
+    ) {}
+    public static from(nodeSet: ASTNode[]) {
+        if (!nodeSet || !nodeSet.length) return null;
+        return new FragmentCursor(nodeSet, 0, []);
+    }
+
     get name() { return this.nodeSet[this.pointer].name }
     get node() { return Object.freeze(this.nodeSet[this.pointer]) }
     sourceSyntaxNode() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
-    constructor(private nodeSet: ASTNode[]) {}
 
     firstChild() {
+        if (this.nodeSet.length==0) return false;
         let currentPointer = this.pointer;
         if (this.nodeSet[this.pointer].length==1) return false;
         this.pointer+=1;
@@ -35,6 +43,7 @@ export class FragmentCursor implements Cursor {
     }
 
     parent() {
+        if (this.nodeSet.length==0) return false;
         if (this.name==TabFragment.name || this.ancestryTrace.length==0) return false;
         this.pointer = this.ancestryTrace[this.ancestryTrace.length-1];
         this.ancestryTrace.pop();
@@ -57,26 +66,28 @@ export class FragmentCursor implements Cursor {
     }
 
     nextSibling() {
-        let currentPointer = this.pointer;
-        let hasParent = this.parent();
-        let parentPointer = this.pointer;
-        this.pointer = currentPointer;
-        if (!hasParent) return false;
+        if (!this.ancestryTrace.length) return false
+        let parentPointer = this.ancestryTrace[this.ancestryTrace.length-1];
 
-        let nextInorder = this.pointer+this.nodeSet[currentPointer].length;
-        if (parentPointer+this.nodeSet[parentPointer].length < nextInorder) return false;
+        let nextInorder = this.pointer + this.nodeSet[this.pointer].length;
+        if (parentPointer+this.nodeSet[parentPointer].length <= nextInorder) return false;
         this.pointer = nextInorder;
         return true;
     }
+    fork() {
+        return new FragmentCursor(this.nodeSet, this.pointer, this.ancestryTrace);
+    }
+
+    static readonly dud =  new FragmentCursor([]);
+
     printTree() {
-        let currentPointer = this.pointer;
         let str = this.printTreeRecursiveHelper();
-        this.pointer = currentPointer;
         return str;
     }
     private printTreeRecursiveHelper() {
-        let str = `${this.nodeSet[this.pointer].name}(`;
-        this.firstChild();
+        let str = `${this.nodeSet[this.pointer].name}`;
+        if (this.firstChild()) str += "(";
+        else return str;
         let first = true;
         do {
             if (!first) str += ",";
@@ -84,6 +95,7 @@ export class FragmentCursor implements Cursor {
             str += this.printTreeRecursiveHelper();
         } while (this.nextSibling());
         str += ")";
+        this.parent();
         return str;
     }
 }

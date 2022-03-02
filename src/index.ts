@@ -193,7 +193,7 @@ class ParseContext  {
             this.withContext(() => { while (!(tree = this.parse!.advance(Work.MinSlice).tree)) {} });
             this.treeLen = pos;
             this.tree = tree!;
-            // TODO: this.fragments = this.withoutTempSkipped(TabFragment.addTree(this.tree, this.fragments, true)); also consider incorporating this.fragments = this.parse.getFragments()
+            this.fragments = this.withoutTempSkipped(TabFragment.addTree(this.tree, this.fragments, true));
             this.parse = null;
         }
     }
@@ -219,7 +219,6 @@ class ParseContext  {
         if (!changes.empty) {
             let ranges: ChangedRange[] = [];
             changes.iterChangedRanges((fromA, toA, fromB, toB) => ranges.push({fromA, toA, fromB, toB}));
-            // TODO: understand the below code and implement it.
             fragments = TabFragment.applyChanges(fragments, ranges);
             tree = TabTree.empty;
             treeLen = 0;
@@ -283,7 +282,7 @@ class ParseContext  {
                 let from = ranges[0].from, to = ranges[ranges.length - 1].to;
                 let parser = {
                     parsedPos: from,
-                    advance(catchupTimeout:number = 0) {
+                    advance() {
                         let cx = currentContext;
                         if (cx) {
                             for (let r of ranges) cx.tempSkipped.push(r);

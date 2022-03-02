@@ -1,5 +1,5 @@
 import { EditorState } from "@codemirror/state";
-import { SyntaxNodeTypes } from "./nodes";
+import { Measure, SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { FragmentCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
@@ -23,7 +23,7 @@ export class TabFragment {
 
     advance(): FragmentCursor | null {
         let nodeSet = this.linearParser.advance();
-        return nodeSet ? new FragmentCursor(nodeSet) : null;
+        return nodeSet ? this.linearParser.isInvalid ? FragmentCursor.dud : FragmentCursor.from(nodeSet) : null;
     }
 
     
@@ -58,10 +58,6 @@ export class TabFragment {
     }
     
     get isParsed() { return !this.linearParser.isDone }
-    get isInvalid() { 
-        // TODO: implement ways of checking if the TabFragment is valid: e.g. if there are only zero-width measure lines, and no measure lines with duration or notes
-        return false;
-    }
 }
 
 

@@ -313,7 +313,7 @@ export class Measure extends ASTNode {
     }
 
     private charDistance(from: number, to: number, editorState: EditorState) {
-        return editorState.doc.slice(from, to).toString().replace(/\s/, '').length;
+        return editorState.doc.slice(from, to).toString().replace(/\s/g, '').length;
     }
 }
 
@@ -358,12 +358,38 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
     // reflect this fact.
     protected computeRanges(sourceNodes: { [type: string]: SyntaxNode[]; }, offset: number): any[] {
         let connector = sourceNodes[this.getType()][0];
-        let notes = connector.getChildren(SyntaxNodeTypes.Note);
-        let symbol = connector.getChild(SyntaxNodeTypes.ConnectorSymbol);
-        this.notes = this.notes.slice(0,2); // only first two notes make up the relationship
-        let fromNode = notes[0] || symbol;
-        let toNode = notes[1] || symbol;
-        return [fromNode.from - offset, toNode.to - offset];
+        let notes = this.getNotesFromNoteConnector(connector);
+        this.notes = [];
+        if (notes.length==0) {
+            this.notes = [];
+            return [connector.from - offset, connector.to - offset];
+        } else if (notes.length==1) {
+            this.notes = notes;
+            return [Math.min(connector.from, notes[0].from) - offset, Math.max(connector.to, notes[0].to) - offset];
+        } else {
+            this.notes = [notes[0], notes[1]];
+            return [notes[0].from - offset, notes[1].to - offset];
+        }
+    }
+
+    private getNotesFromNoteConnector(connector: SyntaxNode) {
+        let notes:SyntaxNode[] = [];
+        let cursor = connector.cursor;
+        let nestedConnectorExit: SyntaxNode = null;
+        if (!cursor.firstChild()) return [];
+        do {
+            if (cursor.type.is(SyntaxNodeTypes.Note) || cursor.type.is(SyntaxNodeTypes.NoteDecorator)) {
+                notes.push(cursor.node);
+                if (nestedConnectorExit) {
+                    cursor = nestedConnectorExit.cursor;
+                    nestedConnectorExit = null;
+                }
+            } else if (cursor.type.is(SyntaxNodeTypes.NoteConnector)) {
+                nestedConnectorExit = cursor.node;
+                cursor.firstChild();
+            }
+        } while (cursor.nextSibling());
+        return notes;
     }
 
     protected createChildren() { return this.notes.map((node) => Note.from(node.name, {[node.name]: [node]}, this.offset)); }
