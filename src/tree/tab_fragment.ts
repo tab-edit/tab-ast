@@ -1,5 +1,6 @@
+// TODO: credit https://github.com/lezer-parser/common/blob/main/src/parse.ts
 import { EditorState } from "@codemirror/state";
-import { Measure, SyntaxNodeTypes } from "./nodes";
+import { SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { FragmentCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
@@ -11,17 +12,21 @@ export class TabFragment {
     constructor(
         readonly from: number,
         readonly to: number,
-        rootNode: SyntaxNode | null,
+        rootNode: SyntaxNode,
         editorState: EditorState,
         private linearParser?: LinearParser
     ) {
         if (linearParser) return;
-        if (!rootNode) throw new Error("rootNode must be present if no linearParser is provided");
+        if (!rootNode) {
+            this._isBlankFragment = true;
+            return;
+        }
         if (rootNode.name!=TabFragment.AnchorNode) throw new Error("Incorrect node type used.");
         this.linearParser = new LinearParser(rootNode, this.from, editorState);
     }
 
     advance(): FragmentCursor | null {
+        if (this.isBlankFragment) return FragmentCursor.dud;
         let nodeSet = this.linearParser.advance();
         return nodeSet ? this.linearParser.isInvalid ? FragmentCursor.dud : FragmentCursor.from(nodeSet) : null;
     }
@@ -52,20 +57,48 @@ export class TabFragment {
         }
     }
 
-    offset(delta: number):TabFragment|null {
+    private offset(delta: number):TabFragment|null {
         if (this.from+delta < 0) return null;
         return new TabFragment(this.from+delta, this.to+delta, null, null, this.linearParser);
     }
+    /// Create a set of fragments from a freshly parsed tree, or update
+    /// an existing set of fragments by replacing the ones that overlap
+    /// with a tree with content from the new tree.
+    static addTree(tree: TabTree, fragments: readonly TabFragment[] = []) {
+        let result = [...tree.getFragments()];
+        for (let f of fragments) if (f.to > tree.to) result.push(f);
+        return result
+    }
+
+    _isBlankFragment = false;
+    get isBlankFragment() {
+        return this._isBlankFragment;
+    }
+    static createBlankFragment(from: number, to: number) {
+        return new TabFragment(from, to, null, null);
+    }
+
     
-    get isParsed() { return !this.linearParser.isDone }
+    get isParsed() { return this.isBlankFragment || !this.linearParser.isDone }
 }
 
 
 export class TabTree {
     static ParseAnchor = TabFragment.name;
+    private _from: number;
+    private _to: number;
+    get from() { return this._from }
+    get to() { return this._to }
+    constructor(readonly fragments: TabFragment[]) {
+        this._from = fragments[0] ? fragments[0].from : 0;
+        this._to = fragments[fragments.length-1] ? fragments[fragments.length-1].to : 0;
+    }
 
-    constructor(readonly fragments: TabFragment[] = []) {}
+    static createBlankTree(from: number, to:  number) {
+        return new TabTree([TabFragment.createBlankFragment(from, to)]);
+    }
+
     getFragments() { return this.fragments }
-    static readonly empty = new TabTree();
+    static readonly empty = new TabTree([]);
 }
 

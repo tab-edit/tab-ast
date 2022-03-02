@@ -1,4 +1,4 @@
-//TODO give credit to https://github.com/codemirror/language/blob/main/src/language.ts
+//TODO: give credit to https://github.com/codemirror/language/blob/main/src/language.ts
 import { ChangeDesc, EditorState, Extension, Facet, StateEffect, StateField, Transaction } from "@codemirror/state";
 import { EditorView, logException, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { ChangedRange } from "@lezer/common";
@@ -171,7 +171,7 @@ class ParseContext  {
             for(;;) {
                 let {tree} = this.parse.advance();
                 if (tree!=null) {
-                    this.fragments = this.withoutTempSkipped(TabFragment.addTree(tree, this.fragments, this.parse.stoppedAt != null));
+                    this.fragments = this.withoutTempSkipped(TabFragment.addTree(tree, this.fragments));
                     this.treeLen = this.parse.stoppedAt ?? this.state.doc.length;
                     this.tree = tree;
                     this.parse = null;
@@ -193,7 +193,7 @@ class ParseContext  {
             this.withContext(() => { while (!(tree = this.parse!.advance(Work.MinSlice).tree)) {} });
             this.treeLen = pos;
             this.tree = tree!;
-            this.fragments = this.withoutTempSkipped(TabFragment.addTree(this.tree, this.fragments, true));
+            this.fragments = this.withoutTempSkipped(TabFragment.addTree(this.tree, this.fragments));
             this.parse = null;
         }
     }
@@ -282,15 +282,14 @@ class ParseContext  {
                 let from = ranges[0].from, to = ranges[ranges.length - 1].to;
                 let parser = {
                     parsedPos: from,
-                    advance() {
+                    advance(catchupTimeout:number = 0) {
                         let cx = currentContext;
                         if (cx) {
                             for (let r of ranges) cx.tempSkipped.push(r);
                             if (until) cx.scheduleOn = cx.scheduleOn ? Promise.all([cx.scheduleOn, until]) : until;
                         }
                         this.parsedPos = to;
-                        // TODO: return new TabTree(length=to-from);
-                        return {blocked: false, tree: new TabTree()};
+                        return {blocked: false, tree: TabTree.createBlankTree(from, to)};
                     },
                     stoppedAt: null,
                     stopAt() {},

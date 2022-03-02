@@ -4,7 +4,17 @@ import { ASTNode, Measure, TabSegment } from "../tree/nodes";
 import { TabFragment } from "../tree/tab_fragment";
 
 /// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked list structure
+// the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
+// init:      [_rootNode_]
+// advance(): [rootNode, _rootNodeChild1, rootNodeChild2, rootNodeChild3..._]
+// advance(): [rootNode, rootNodeChild1, _rootNodeChild1Child1, rootNodeChild1Child2, ..._, rootNodeChild2, rootNodeChild3...]
+// ...
+// This is done using a singly-linked list to make it more efficient than performing array insert operations.
 export class LinearParser {
+    // TODO: you might want to change this later to a Uint16array with the following format:
+    // [node1typeID, length, rangeLen, ranges..., node2typeID, ...]
+    // To do this, you will have to modify the ASTNode.increaseLength() function to account 
+    // for the fact that different nodes can have different ranges
     private nodeSet: ASTNode[] = [];
     private head: LPNode | null = null;
     constructor(

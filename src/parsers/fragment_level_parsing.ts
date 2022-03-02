@@ -1,3 +1,4 @@
+// TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
 import { ensureSyntaxTree, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
@@ -149,6 +150,16 @@ export class PartialTabParseImplement implements PartialTabParse {
         for (let fI=0; fI<this.cachedFragments.length; fI++) {
             if (this.cachedFragments[fI].from > start) break;
             if (this.cachedFragments[fI].to > start) {
+                if (this.cachedFragments[fI].isBlankFragment) {
+                    // there might be a range overlap in the end of a 
+                    // skipping fragment with the start of the subsequent, 
+                    // proper fragment, so to make sure that we do not select 
+                    // the skipping fragment instead of the proper fragment, we confirm
+                    if (fI<this.cachedFragments.length 
+                        && !this.cachedFragments[fI+1].isBlankFragment 
+                        && this.cachedFragments[fI+1].from <= start
+                    ) fI++;
+                }
                 this.fragments.push(this.cachedFragments[fI]);
                 this.parsedPos = this.cachedFragments[fI].to;
                 return true;
