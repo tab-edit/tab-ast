@@ -1,11 +1,16 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "esnext",
     "esModuleInterop": true,
     "target": "es6",
     "moduleResolution": "node",
     "sourceMap": true,
-    "outDir": "dist"
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationDir": "dts",
+    "outDir": "ts_out"
   },
+  "include": ["src"],
+  "exclude": ["node_modules"],
   "lib": ["es2015"]
 }

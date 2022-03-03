@@ -2,10 +2,9 @@
   "name": "tab-ast",
   "version": "1.0.0",
   "description": "codemirror 6 extension to generate an ast for music tablature",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "tsc --build",
-    "clean": "tsc --build --clean",
+    "build": "tsc --build && rollup -c rollup.config.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -29,7 +28,9 @@
   },
   "homepage": "https://github.com/Stan15/tab-ast#readme",
   "devDependencies": {
-    "typescript": "^4.5.5"
+    "rollup": "^2.69.0",
+    "rollup-plugin-dts": "^4.1.0",
+    "typescript": "^4.6.2"
   },
   "dependencies": {
     "@codemirror/language": "^0.19.7",
@@ -37,6 +38,7 @@
     "@codemirror/view": "^0.19.40",
     "@lezer/common": "^0.15.11",
     "@lezer/lr": "^0.15.7",
+    "@rollup/plugin-typescript": "^8.3.1",
     "parser-tablature": "file:../parser-tablature"
   }
 }
