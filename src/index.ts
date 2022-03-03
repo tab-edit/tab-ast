@@ -6,7 +6,7 @@ import { TabParser, PartialTabParse } from "./parsers/fragment_level_parsing";
 import { TabFragment, TabTree } from "./tree/tab_fragment";
 
 // This mirrors the `Language` class in @codemirror/language
-class TabLanguage {
+export class TabLanguage {
     /// The extension value to install this provider.
     readonly extension: Extension;
 
@@ -49,7 +49,7 @@ class TabLanguage {
     static setState = StateEffect.define<TabLanguageState>();
 }
 
-function languageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1) {
+export function languageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1) {
     let topLang = state.facet(tabLanguage);
     if (!topLang) return null;
     let facet = topLang.data;
@@ -122,7 +122,7 @@ const enum Work {
 let currentContext: ParseContext | null = null;
 
 /// A parse context provided to parsers working on the editor content.
-class ParseContext  {
+export class ParseContext  {
     private parse: PartialTabParse | null = null;
     /// @internal
     tempSkipped: {from: number, to: number}[] = [];
