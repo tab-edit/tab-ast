@@ -113,6 +113,7 @@ export class TabTree {
             str += fragment.toString();
         }
         str += ")"
+        return str;
     }
     static readonly empty = new TabTree([]);
 }
