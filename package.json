@@ -39,6 +39,6 @@
     "@lezer/common": "^0.15.11",
     "@lezer/lr": "^0.15.7",
     "@rollup/plugin-typescript": "^8.3.1",
-    "parser-tablature": "file:../parser-tablature"
+    "parser-tablature": "github:tab-edit/parser-tablature"
   }
 }
