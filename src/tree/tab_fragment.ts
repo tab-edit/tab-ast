@@ -78,6 +78,14 @@ export class TabFragment {
         return new TabFragment(from, to, null, null);
     }
 
+    get cursor() {
+        return this.isParsed ? this.advance() : null;
+    }
+
+    toString() {
+        return this.cursor?.printTree() || "";
+    }
+
     
     get isParsed() { return this.isBlankFragment || !this.linearParser.isDone }
 }
@@ -99,6 +107,13 @@ export class TabTree {
     }
 
     getFragments() { return this.fragments }
+    toString() {
+        let str = "Tree("
+        for (let fragment of this.fragments) {
+            str += fragment.toString();
+        }
+        str += ")"
+    }
     static readonly empty = new TabTree([]);
 }
 

@@ -735,6 +735,13 @@ class TabFragment {
     static createBlankFragment(from, to) {
         return new TabFragment(from, to, null, null);
     }
+    get cursor() {
+        return this.isParsed ? this.advance() : null;
+    }
+    toString() {
+        var _a;
+        return ((_a = this.cursor) === null || _a === void 0 ? void 0 : _a.printTree()) || "";
+    }
     get isParsed() { return this.isBlankFragment || !this.linearParser.isDone; }
 }
 // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
@@ -751,6 +758,13 @@ class TabTree {
         return new TabTree([TabFragment.createBlankFragment(from, to)]);
     }
     getFragments() { return this.fragments; }
+    toString() {
+        let str = "Tree(";
+        for (let fragment of this.fragments) {
+            str += fragment.toString();
+        }
+        str += ")";
+    }
 }
 TabTree.ParseAnchor = TabFragment.name;
 TabTree.empty = new TabTree([]);

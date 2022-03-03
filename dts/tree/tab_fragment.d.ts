@@ -16,6 +16,8 @@ export declare class TabFragment {
     _isBlankFragment: boolean;
     get isBlankFragment(): boolean;
     static createBlankFragment(from: number, to: number): TabFragment;
+    get cursor(): FragmentCursor;
+    toString(): string;
     get isParsed(): boolean;
 }
 export declare class TabTree {
@@ -28,5 +30,6 @@ export declare class TabTree {
     constructor(fragments: TabFragment[]);
     static createBlankTree(from: number, to: number): TabTree;
     getFragments(): TabFragment[];
+    toString(): void;
     static readonly empty: TabTree;
 }
