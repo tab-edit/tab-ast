@@ -1,8 +1,16 @@
 import { ChangeDesc, EditorState, Extension, Facet, StateField, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { TabParser, PartialTabParse } from "./parsers/fragment_level_parsing";
+import { TabParser, PartialTabParse } from "./parsers/fragment_level_parser";
 import { TabFragment, TabTree } from "./tree/tab_fragment";
-declare class TabLanguage {
+export { TabParserImplement } from "./parsers/fragment_level_parser";
+export declare function defineTabLanguageFacet(baseData?: {
+    [name: string]: any;
+}): Facet<{
+    [name: string]: any;
+}, readonly {
+    [name: string]: any;
+}[]>;
+export declare class TabLanguage {
     readonly data: Facet<{
         [name: string]: any;
     }>;
@@ -13,14 +21,25 @@ declare class TabLanguage {
     }>, parser: TabParser, extraExtensions?: Extension[]);
     isActiveAt(state: EditorState, pos: number, side?: -1 | 0 | 1): boolean;
     get allowsNesting(): boolean;
+    static define(spec: {
+        parser: TabParser;
+        languageData?: {
+            [name: string]: any;
+        };
+    }): TabLanguage;
     static state: StateField<TabLanguageState>;
     static setState: import("@codemirror/state").StateEffectType<TabLanguageState>;
 }
+export declare function languageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1): Facet<{
+    [name: string]: any;
+}, readonly {
+    [name: string]: any;
+}[]>;
 export declare function tabSyntaxTree(state: EditorState): TabTree;
 export declare function ensureTabSyntaxTree(state: EditorState, upto: number, timeout?: number): TabTree | null;
 export declare function tabSyntaxTreeAvailable(state: EditorState, upto?: number): boolean;
 export declare function tabSyntaxParserRunning(view: EditorView): boolean | (() => void);
-declare class ParseContext {
+export declare class ParseContext {
     private parser;
     readonly state: EditorState;
     fragments: readonly TabFragment[];
@@ -90,4 +109,3 @@ export declare class TabLanguageSupport {
     extension: Extension;
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
-export {};

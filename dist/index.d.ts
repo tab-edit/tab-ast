@@ -1,5 +1,5 @@
 import * as _codemirror_state from '@codemirror/state';
-import { EditorState, Facet, Extension, StateField, Transaction, ChangeDesc } from '@codemirror/state';
+import { EditorState, Facet, Extension, StateField, ChangeDesc, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import * as _lezer_common from '@lezer/common';
 import { SyntaxNode, ChangedRange } from '@lezer/common';
@@ -137,6 +137,12 @@ declare abstract class TabParser {
         to: number;
     }[]): TabTree;
 }
+declare class TabParserImplement extends TabParser {
+    createParse(editorState: EditorState, fragments: readonly TabFragment[], ranges: readonly {
+        from: number;
+        to: number;
+    }[]): PartialTabParse;
+}
 interface PartialTabParse {
     advance(catchupTimeout?: number): {
         blocked: boolean;
@@ -148,6 +154,13 @@ interface PartialTabParse {
     getFragments(): TabFragment[];
 }
 
+declare function defineTabLanguageFacet(baseData?: {
+    [name: string]: any;
+}): Facet<{
+    [name: string]: any;
+}, readonly {
+    [name: string]: any;
+}[]>;
 declare class TabLanguage {
     readonly data: Facet<{
         [name: string]: any;
@@ -159,9 +172,20 @@ declare class TabLanguage {
     }>, parser: TabParser, extraExtensions?: Extension[]);
     isActiveAt(state: EditorState, pos: number, side?: -1 | 0 | 1): boolean;
     get allowsNesting(): boolean;
+    static define(spec: {
+        parser: TabParser;
+        languageData?: {
+            [name: string]: any;
+        };
+    }): TabLanguage;
     static state: StateField<TabLanguageState>;
     static setState: _codemirror_state.StateEffectType<TabLanguageState>;
 }
+declare function languageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1): Facet<{
+    [name: string]: any;
+}, readonly {
+    [name: string]: any;
+}[]>;
 declare function tabSyntaxTree(state: EditorState): TabTree;
 declare function ensureTabSyntaxTree(state: EditorState, upto: number, timeout?: number): TabTree | null;
 declare function tabSyntaxTreeAvailable(state: EditorState, upto?: number): boolean;
@@ -237,4 +261,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { TabLanguageSupport, ensureTabSyntaxTree, tabLanguage, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, defineTabLanguageFacet, ensureTabSyntaxTree, languageDataFacetAt, tabLanguage, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };

@@ -3,10 +3,10 @@ import { ensureSyntaxTree, syntaxTree, syntaxTreeAvailable } from "@codemirror/l
 import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
 import { TabFragment, TabTree } from "../tree/tab_fragment";
-
 class Range {
     constructor(readonly from: number, readonly to: number) {}
 }
+
 export abstract class TabParser {
     /// Start a parse for a single tree. Called by `startParse`,
     /// with the optional arguments resolved.

@@ -2,8 +2,15 @@
 import { ChangeDesc, EditorState, Extension, Facet, StateEffect, StateField, Transaction } from "@codemirror/state";
 import { EditorView, logException, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { ChangedRange } from "@lezer/common";
-import { TabParser, PartialTabParse } from "./parsers/fragment_level_parsing";
+import { TabParser, PartialTabParse } from "./parsers/fragment_level_parser";
 import { TabFragment, TabTree } from "./tree/tab_fragment";
+export { TabParserImplement } from "./parsers/fragment_level_parser";
+
+export function defineTabLanguageFacet(baseData?: {[name: string]: any}) {
+    return Facet.define<{[name: string]: any}>({
+        combine: baseData ? values => values.concat(baseData!) : undefined
+    });
+}
 
 // This mirrors the `Language` class in @codemirror/language
 export class TabLanguage {
@@ -41,6 +48,15 @@ export class TabLanguage {
     /// Indicates whether this language allows nested languages. The 
     /// default implementation returns true.
     get allowsNesting() { return false }
+
+    static define(spec: {
+        parser: TabParser,
+        languageData?: {[name: string]: any}
+    }) {
+        // TODO: revisit this to make sure that this modification is correct
+        let data = defineTabLanguageFacet(spec.languageData);
+        return new TabLanguage(data, spec.parser);
+    }
 
     /// @internal
     static state: StateField<TabLanguageState>;

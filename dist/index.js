@@ -1,6 +1,6 @@
 import { StateEffect, StateField, Facet, EditorState } from '@codemirror/state';
 import { ViewPlugin, logException } from '@codemirror/view';
-import '@codemirror/language';
+import { syntaxTreeAvailable, ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 
 class FragmentCursor {
     constructor(nodeSet, pointer = 0, ancestryTrace = []) {
@@ -785,8 +785,97 @@ class TabParser {
         }
     }
 }
+// TODO: think of a better name for this class
+class TabParserImplement extends TabParser {
+    createParse(editorState, fragments, ranges) {
+        return new PartialTabParseImplement(editorState, fragments || [], ranges);
+    }
+}
+// TODO: Think of a better name for this class
+class PartialTabParseImplement {
+    /// @internal
+    constructor(editorState, cachedFragments, ranges) {
+        this.editorState = editorState;
+        this.cachedFragments = cachedFragments;
+        this.ranges = ranges;
+        this.stoppedAt = null;
+        this.fragments = [];
+        this.editorState = editorState;
+        this.text = editorState.doc.toString();
+        this.to = ranges[ranges.length - 1].to;
+        this.parsedPos = ranges[0].from;
+    }
+    getFragments() {
+        return this.fragments;
+    }
+    advance(catchupTimeout = 25) {
+        if (this.stoppedAt != null && this.parsedPos > this.stoppedAt)
+            return { blocked: false, tree: this.finish() };
+        if (!syntaxTreeAvailable(this.editorState, this.parsedPos)) {
+            if (catchupTimeout > 0)
+                ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
+            return { blocked: true, tree: null };
+        }
+        if (!this.fragments[this.fragments.length - 1].isParsed) {
+            this.fragments[this.fragments.length - 1].advance();
+            return { blocked: false, tree: null };
+        }
+        if (this.cachedFragments && this.reuseFragment(this.parsedPos))
+            return { blocked: false, tree: null };
+        let rawParseTree = syntaxTree(this.editorState);
+        let node = rawParseTree.resolve(this.parsedPos, 1);
+        let curr = node.cursor;
+        //look for TabSegment at this position and add it to parse tree
+        while (curr.name != TabTree.ParseAnchor && curr.parent()) { }
+        if (curr.name != TabTree.ParseAnchor) {
+            this.parsedPos = node.to;
+            return { blocked: false, tree: null };
+        }
+        let frag = TabFragment.startParse(curr.node, this.editorState);
+        if (frag)
+            this.fragments.push(frag);
+        this.parsedPos = curr.to;
+        return { blocked: false, tree: null };
+    }
+    stopAt(pos) {
+        if (this.stoppedAt != null && this.stoppedAt < pos)
+            throw new RangeError("Can't move stoppedAt forward");
+        this.stoppedAt = pos;
+    }
+    finish() {
+        //TODO: create the user-visible tree and return it.
+        return new TabTree(this.fragments);
+    }
+    reuseFragment(start) {
+        for (let fI = 0; fI < this.cachedFragments.length; fI++) {
+            if (this.cachedFragments[fI].from > start)
+                break;
+            if (this.cachedFragments[fI].to > start) {
+                if (this.cachedFragments[fI].isBlankFragment) {
+                    // there might be a range overlap in the end of a 
+                    // skipping fragment with the start of the subsequent, 
+                    // proper fragment, so to make sure that we do not select 
+                    // the skipping fragment instead of the proper fragment, we confirm
+                    if (fI < this.cachedFragments.length
+                        && !this.cachedFragments[fI + 1].isBlankFragment
+                        && this.cachedFragments[fI + 1].from <= start)
+                        fI++;
+                }
+                this.fragments.push(this.cachedFragments[fI]);
+                this.parsedPos = this.cachedFragments[fI].to;
+                return true;
+            }
+        }
+        return false;
+    }
+}
 
 //TODO: give credit to https://github.com/codemirror/language/blob/main/src/language.ts
+function defineTabLanguageFacet(baseData) {
+    return Facet.define({
+        combine: baseData ? values => values.concat(baseData) : undefined
+    });
+}
 // This mirrors the `Language` class in @codemirror/language
 class TabLanguage {
     ///
@@ -812,6 +901,11 @@ class TabLanguage {
     /// Indicates whether this language allows nested languages. The 
     /// default implementation returns true.
     get allowsNesting() { return false; }
+    static define(spec) {
+        // TODO: revisit this to make sure that this modification is correct
+        let data = defineTabLanguageFacet(spec.languageData);
+        return new TabLanguage(data, spec.parser);
+    }
 }
 ///@internal
 TabLanguage.setState = StateEffect.define();
@@ -1214,5 +1308,5 @@ class TabLanguageSupport {
     }
 }
 
-export { TabLanguageSupport, ensureTabSyntaxTree, tabLanguage, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, defineTabLanguageFacet, ensureTabSyntaxTree, languageDataFacetAt, tabLanguage, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map

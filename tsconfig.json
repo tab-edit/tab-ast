@@ -7,8 +7,7 @@
     "sourceMap": true,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "declarationDir": "dts",
-    "outDir": "ts_out"
+    "declarationDir": "dts"
   },
   "include": ["src"],
   "exclude": ["node_modules"],
