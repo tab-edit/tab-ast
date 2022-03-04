@@ -36,13 +36,13 @@ export class TabLanguage {
         this.parser = parser;
         this.extension = [
             tabLanguage.of(this),
-            EditorState.languageData.of((state, pos, side) => state.facet(languageDataFacetAt(state, pos, side)!))
+            EditorState.languageData.of((state, pos, side) => state.facet(tabLanguageDataFacetAt(state, pos, side)!))
         ].concat(extraExtensions);
     }
 
     /// Query whether this language is active at the given position
     isActiveAt(state: EditorState, pos: number, side: -1 | 0 | 1 = -1) {
-        return languageDataFacetAt(state, pos, side) == this.data;
+        return tabLanguageDataFacetAt(state, pos, side) == this.data;
     }
 
     /// Indicates whether this language allows nested languages. The 
@@ -65,7 +65,7 @@ export class TabLanguage {
     static setState = StateEffect.define<TabLanguageState>();
 }
 
-export function languageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1) {
+export function tabLanguageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1) {
     let topLang = state.facet(tabLanguage);
     if (!topLang) return null;
     let facet = topLang.data;
