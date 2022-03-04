@@ -16,6 +16,7 @@ export declare class FragmentCursor implements Cursor {
     private constructor();
     static from(nodeSet: ASTNode[]): FragmentCursor;
     get name(): string;
+    get ranges(): number[];
     get node(): Readonly<ASTNode>;
     sourceSyntaxNode(): AnchoredSyntaxCursor;
     firstChild(): boolean;

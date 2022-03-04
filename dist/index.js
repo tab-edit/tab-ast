@@ -3,7 +3,9 @@ import { ViewPlugin, logException } from '@codemirror/view';
 import { syntaxTreeAvailable, ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 
 class FragmentCursor {
-    constructor(nodeSet, pointer = 0, ancestryTrace = []) {
+    constructor(
+    // might want to change this to an array of numbers.
+    nodeSet, pointer = 0, ancestryTrace = []) {
         this.nodeSet = nodeSet;
         this.pointer = pointer;
         this.ancestryTrace = ancestryTrace;
@@ -14,6 +16,7 @@ class FragmentCursor {
         return new FragmentCursor(nodeSet, 0, []);
     }
     get name() { return this.nodeSet[this.pointer].name; }
+    get ranges() { return Array.from(this.nodeSet[this.pointer].ranges); }
     get node() { return Object.freeze(this.nodeSet[this.pointer]); }
     sourceSyntaxNode() { var _a; return ((_a = this.nodeSet[this.pointer]) === null || _a === void 0 ? void 0 : _a.getRootNodeTraverser()) || null; }
     firstChild() {
@@ -671,13 +674,13 @@ class TabFragment {
         this.from = from;
         this.to = to;
         this.linearParser = linearParser;
-        this._isBlankFragment = false;
         if (linearParser)
             return;
         if (!rootNode) {
-            this._isBlankFragment = true;
+            this.isBlankFragment = true;
             return;
         }
+        this.isBlankFragment = false;
         if (rootNode.name != TabFragment.AnchorNode)
             throw new Error("Incorrect node type used.");
         this.linearParser = new LinearParser(rootNode, this.from, editorState);
@@ -729,9 +732,6 @@ class TabFragment {
                 result.push(f);
         return result;
     }
-    get isBlankFragment() {
-        return this._isBlankFragment;
-    }
     static createBlankFragment(from, to) {
         return new TabFragment(from, to, null, null);
     }
@@ -749,11 +749,9 @@ TabFragment.AnchorNode = SyntaxNodeTypes.TabSegment;
 class TabTree {
     constructor(fragments) {
         this.fragments = fragments;
-        this._from = fragments[0] ? fragments[0].from : 0;
-        this._to = fragments[fragments.length - 1] ? fragments[fragments.length - 1].to : 0;
+        this.from = fragments[0] ? fragments[0].from : 0;
+        this.to = fragments[fragments.length - 1] ? fragments[fragments.length - 1].to : 0;
     }
-    get from() { return this._from; }
-    get to() { return this._to; }
     static createBlankTree(from, to) {
         return new TabTree([TabFragment.createBlankFragment(from, to)]);
     }
@@ -764,6 +762,30 @@ class TabTree {
             str += fragment.toString();
         }
         str += ")";
+        return str;
+    }
+    /// Iterate over the tree and its children in an in-order fashion
+    /// calling the spec.enter() function whenever a node is entered, and 
+    /// spec.leave() when we leave a node. When enter returns false, that 
+    /// node will not have its children iterated over (or leave called).
+    iterate(spec) {
+        for (let frag of this.fragments) {
+            this.iterateHelper(spec, frag.cursor);
+        }
+    }
+    iterateHelper(spec, cursor) {
+        let explore;
+        do {
+            explore = spec.enter(cursor.name, cursor.ranges, () => cursor.node);
+            if (!explore)
+                continue;
+            if (cursor.firstChild()) {
+                this.iterateHelper(spec, cursor);
+                cursor.parent();
+            }
+            if (spec.leave)
+                spec.leave(cursor.name, cursor.ranges, () => cursor.node);
+        } while (cursor.nextSibling());
     }
 }
 TabTree.ParseAnchor = TabFragment.name;

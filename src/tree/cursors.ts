@@ -14,6 +14,7 @@ interface Cursor {
 
 export class FragmentCursor implements Cursor {
     private constructor(
+        // might want to change this to an array of numbers.
         private nodeSet: ASTNode[],
         private pointer: number = 0,
         private ancestryTrace: number[] = []
@@ -24,6 +25,7 @@ export class FragmentCursor implements Cursor {
     }
 
     get name() { return this.nodeSet[this.pointer].name }
+    get ranges() { return Array.from(this.nodeSet[this.pointer].ranges) }
     get node() { return Object.freeze(this.nodeSet[this.pointer]) }
     sourceSyntaxNode() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
 

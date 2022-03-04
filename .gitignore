@@ -1,4 +1,5 @@
 /node_modules
 /dts
 /src/testing.ts
+/dist
 package-lock.json

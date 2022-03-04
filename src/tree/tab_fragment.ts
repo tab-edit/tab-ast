@@ -1,6 +1,6 @@
 // TODO: credit https://github.com/lezer-parser/common/blob/main/src/parse.ts
 import { EditorState } from "@codemirror/state";
-import { SyntaxNodeTypes } from "./nodes";
+import { ASTNode, SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { FragmentCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
@@ -8,7 +8,7 @@ import { ChangedRange, SyntaxNode } from "@lezer/common";
 export class TabFragment {
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
     static AnchorNode: string = SyntaxNodeTypes.TabSegment;
-
+    readonly isBlankFragment: boolean;
     constructor(
         readonly from: number,
         readonly to: number,
@@ -18,9 +18,10 @@ export class TabFragment {
     ) {
         if (linearParser) return;
         if (!rootNode) {
-            this._isBlankFragment = true;
+            this.isBlankFragment = true;
             return;
         }
+        this.isBlankFragment = false;
         if (rootNode.name!=TabFragment.AnchorNode) throw new Error("Incorrect node type used.");
         this.linearParser = new LinearParser(rootNode, this.from, editorState);
     }
@@ -69,11 +70,6 @@ export class TabFragment {
         for (let f of fragments) if (f.to > tree.to) result.push(f);
         return result
     }
-
-    _isBlankFragment = false;
-    get isBlankFragment() {
-        return this._isBlankFragment;
-    }
     static createBlankFragment(from: number, to: number) {
         return new TabFragment(from, to, null, null);
     }
@@ -85,21 +81,40 @@ export class TabFragment {
     toString() {
         return this.cursor?.printTree() || "";
     }
-
     
     get isParsed() { return this.isBlankFragment || !this.linearParser.isDone }
 }
 
 
+type IteratorSpec = {
+    enter: (
+        // TODO: we might want to make a TabNodeType
+        // instead of just using a string. whether
+        // this should be a class or an enum for 
+        // good design, i am not sure. class might 
+        // be helpful if we are going to store 
+        // ASTNodes as an array of numbers, that way, 
+        // we can just get the id of the type from TabNodeType.id
+        type: string,
+        ranges: number[],
+        get: () => Readonly<ASTNode>
+    ) => false | undefined,
+    leave?: (
+        type: string,
+        ranges: number[],
+        get: () => Readonly<ASTNode>
+    ) => void,
+    from?: number,
+    to?: number
+};
+
 export class TabTree {
     static ParseAnchor = TabFragment.name;
-    private _from: number;
-    private _to: number;
-    get from() { return this._from }
-    get to() { return this._to }
+    readonly from: number;
+    readonly to: number;
     constructor(readonly fragments: TabFragment[]) {
-        this._from = fragments[0] ? fragments[0].from : 0;
-        this._to = fragments[fragments.length-1] ? fragments[fragments.length-1].to : 0;
+        this.from = fragments[0] ? fragments[0].from : 0;
+        this.to = fragments[fragments.length-1] ? fragments[fragments.length-1].to : 0;
     }
 
     static createBlankTree(from: number, to:  number) {
@@ -115,6 +130,30 @@ export class TabTree {
         str += ")"
         return str;
     }
+
+    /// Iterate over the tree and its children in an in-order fashion
+    /// calling the spec.enter() function whenever a node is entered, and 
+    /// spec.leave() when we leave a node. When enter returns false, that 
+    /// node will not have its children iterated over (or leave called).
+    iterate(spec: IteratorSpec) {
+        for (let frag of this.fragments) {
+            this.iterateHelper(spec, frag.cursor);
+        }
+    }
+
+    private iterateHelper(spec: IteratorSpec, cursor: FragmentCursor) {
+        let explore: boolean;
+        do {
+            explore = spec.enter(cursor.name, cursor.ranges, () => cursor.node);
+            if (!explore) continue;
+            if (cursor.firstChild()) {
+                this.iterateHelper(spec, cursor);
+                cursor.parent();
+            }
+            if (spec.leave) spec.leave(cursor.name, cursor.ranges, () => cursor.node);
+        }while (cursor.nextSibling());
+    }
+
     static readonly empty = new TabTree([]);
 }
 
