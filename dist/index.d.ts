@@ -59,6 +59,33 @@ declare class OffsetSyntaxNode {
     get to(): number;
 }
 
+declare enum SyntaxNodeTypes {
+    Tablature = "Tablature",
+    TabSegment = "TabSegment",
+    TabSegmentLine = "TabSegmentLine",
+    TabString = "TabString",
+    MeasureLineName = "MeasureLineName",
+    MeasureLine = "MeasureLine",
+    Note = "Note",
+    NoteDecorator = "NoteDecorator",
+    NoteConnector = "NoteConnector",
+    ConnectorSymbol = "ConnectorSymbol",
+    Hammer = "Hammer",
+    Pull = "Pull",
+    Slide = "Slide",
+    Fret = "Fret",
+    Harmonic = "Harmonic",
+    Grace = "Frace",
+    Comment = "Comment",
+    RepeatLine = "RepeatLine",
+    Repeat = "Repeat",
+    Multiplier = "Multiplier",
+    TimeSignature = "TimeSignature",
+    TimeSigLine = "TimeSigLine",
+    TimingLine = "TimingLine",
+    Modifier = "Modifier",
+    InvalidToken = "\u26A0"
+}
 declare abstract class ASTNode {
     protected sourceNodes: {
         [type: string]: SyntaxNode[];
@@ -99,7 +126,7 @@ declare class TabFragment {
     readonly from: number;
     readonly to: number;
     private linearParser?;
-    static AnchorNode: string;
+    static get AnchorNode(): SyntaxNodeTypes;
     readonly isBlankFragment: boolean;
     constructor(from: number, to: number, rootNode: SyntaxNode, editorState: EditorState, linearParser?: LinearParser);
     advance(): FragmentCursor | null;

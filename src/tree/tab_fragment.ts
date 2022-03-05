@@ -7,7 +7,7 @@ import { ChangedRange, SyntaxNode } from "@lezer/common";
 
 export class TabFragment {
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
-    static AnchorNode: string = SyntaxNodeTypes.TabSegment;
+    static get AnchorNode() { return SyntaxNodeTypes.TabSegment }
     readonly isBlankFragment: boolean;
     constructor(
         readonly from: number,

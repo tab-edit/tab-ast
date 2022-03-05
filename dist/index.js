@@ -100,6 +100,8 @@ class TabFragment {
             throw new Error("Incorrect node type used.");
         this.linearParser = new LinearParser(rootNode, this.from, editorState);
     }
+    // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
+    static get AnchorNode() { return SyntaxNodeTypes.TabSegment; }
     advance() {
         if (this.isBlankFragment)
             return FragmentCursor.dud;
@@ -159,8 +161,6 @@ class TabFragment {
     }
     get isParsed() { return this.isBlankFragment || this.linearParser.isDone; }
 }
-// the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
-TabFragment.AnchorNode = SyntaxNodeTypes.TabSegment;
 class TabTree {
     constructor(fragments) {
         this.fragments = fragments;

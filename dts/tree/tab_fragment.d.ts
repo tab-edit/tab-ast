@@ -1,5 +1,5 @@
 import { EditorState } from "@codemirror/state";
-import { ASTNode } from "./nodes";
+import { ASTNode, SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { FragmentCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
@@ -7,7 +7,7 @@ export declare class TabFragment {
     readonly from: number;
     readonly to: number;
     private linearParser?;
-    static AnchorNode: string;
+    static get AnchorNode(): SyntaxNodeTypes;
     readonly isBlankFragment: boolean;
     constructor(from: number, to: number, rootNode: SyntaxNode, editorState: EditorState, linearParser?: LinearParser);
     advance(): FragmentCursor | null;
