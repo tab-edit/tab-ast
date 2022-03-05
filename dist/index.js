@@ -742,7 +742,7 @@ class TabFragment {
         var _a;
         return ((_a = this.cursor) === null || _a === void 0 ? void 0 : _a.printTree()) || "";
     }
-    get isParsed() { return this.isBlankFragment || !this.linearParser.isDone; }
+    get isParsed() { return this.isBlankFragment || this.linearParser.isDone; }
 }
 // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
 TabFragment.AnchorNode = SyntaxNodeTypes.TabSegment;
@@ -852,7 +852,7 @@ class PartialTabParseImplement {
                 ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
             return { blocked: true, tree: null };
         }
-        if (!this.fragments[this.fragments.length - 1].isParsed) {
+        if (this.fragments.length != 0 && !this.fragments[this.fragments.length - 1].isParsed) {
             this.fragments[this.fragments.length - 1].advance();
             return { blocked: false, tree: null };
         }
@@ -927,12 +927,12 @@ class TabLanguage {
         this.parser = parser;
         this.extension = [
             tabLanguage.of(this),
-            EditorState.languageData.of((state, pos, side) => state.facet(languageDataFacetAt(state)))
+            EditorState.languageData.of((state, pos, side) => state.facet(tabLanguageDataFacetAt(state)))
         ].concat(extraExtensions);
     }
     /// Query whether this language is active at the given position
     isActiveAt(state, pos, side = -1) {
-        return languageDataFacetAt(state) == this.data;
+        return tabLanguageDataFacetAt(state) == this.data;
     }
     /// Indicates whether this language allows nested languages. The 
     /// default implementation returns true.
@@ -945,7 +945,7 @@ class TabLanguage {
 }
 ///@internal
 TabLanguage.setState = StateEffect.define();
-function languageDataFacetAt(state, pos, side) {
+function tabLanguageDataFacetAt(state, pos, side) {
     let topLang = state.facet(tabLanguage);
     if (!topLang)
         return null;
@@ -1344,5 +1344,5 @@ class TabLanguageSupport {
     }
 }
 
-export { ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, defineTabLanguageFacet, ensureTabSyntaxTree, languageDataFacetAt, tabLanguage, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map

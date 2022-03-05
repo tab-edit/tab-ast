@@ -190,7 +190,7 @@ declare class TabLanguage {
     static state: StateField<TabLanguageState>;
     static setState: _codemirror_state.StateEffectType<TabLanguageState>;
 }
-declare function languageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1): Facet<{
+declare function tabLanguageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1): Facet<{
     [name: string]: any;
 }, readonly {
     [name: string]: any;
@@ -270,4 +270,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, defineTabLanguageFacet, ensureTabSyntaxTree, languageDataFacetAt, tabLanguage, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };

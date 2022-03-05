@@ -30,7 +30,7 @@ export declare class TabLanguage {
     static state: StateField<TabLanguageState>;
     static setState: import("@codemirror/state").StateEffectType<TabLanguageState>;
 }
-export declare function languageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1): Facet<{
+export declare function tabLanguageDataFacetAt(state: EditorState, pos: number, side: -1 | 0 | 1): Facet<{
     [name: string]: any;
 }, readonly {
     [name: string]: any;

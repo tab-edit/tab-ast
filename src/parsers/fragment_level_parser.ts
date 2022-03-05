@@ -115,7 +115,7 @@ export class PartialTabParseImplement implements PartialTabParse {
             return {blocked: true, tree: null};
         }
 
-        if (!this.fragments[this.fragments.length-1].isParsed) {
+        if (this.fragments.length!=0 && !this.fragments[this.fragments.length-1].isParsed) {
             this.fragments[this.fragments.length-1].advance();
             return {blocked: false, tree: null};
         }

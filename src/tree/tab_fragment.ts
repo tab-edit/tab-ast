@@ -82,7 +82,7 @@ export class TabFragment {
         return this.cursor?.printTree() || "";
     }
     
-    get isParsed() { return this.isBlankFragment || !this.linearParser.isDone }
+    get isParsed() { return this.isBlankFragment || this.linearParser.isDone }
 }
 
 
