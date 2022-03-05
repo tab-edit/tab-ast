@@ -861,8 +861,8 @@ class PartialTabParseImplement {
         let node = rawParseTree.resolve(this.parsedPos, 1);
         let curr = node.cursor;
         //look for TabSegment at this position and add it to parse tree
-        while (curr.name != SyntaxNodeTypes.Tablature) {
-            if (!curr.parent() || curr.name == SyntaxNodeTypes.Tablature)
+        while (curr.name != SyntaxNodeTypes.Tablature && curr.parent()) {
+            if (curr.name == SyntaxNodeTypes.Tablature)
                 break;
             node = curr.node;
         }
