@@ -134,6 +134,8 @@ export class PartialTabParseImplement implements PartialTabParse {
             node = curr.node;
         }
         if (node.name!=TabFragment.AnchorNode) {
+            let frag = TabFragment.createBlankFragment(this.parsedPos, node.to);
+            this.fragments.push(frag);
             this.parsedPos = node.to;
             return {blocked: false, tree: null};
         }
