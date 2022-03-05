@@ -846,6 +846,8 @@ class PartialTabParseImplement {
     advance(catchupTimeout = 25) {
         if (this.stoppedAt != null && this.parsedPos > this.stoppedAt)
             return { blocked: false, tree: this.finish() };
+        if (this.parsedPos >= this.editorState.doc.length)
+            return { blocked: false, tree: this.finish() };
         if (!syntaxTreeAvailable(this.editorState, this.parsedPos)) {
             if (catchupTimeout > 0)
                 ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
