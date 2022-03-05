@@ -109,7 +109,6 @@ type IteratorSpec = {
 };
 
 export class TabTree {
-    static ParseAnchor = TabFragment.name;
     readonly from: number;
     readonly to: number;
     constructor(readonly fragments: TabFragment[]) {

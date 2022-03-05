@@ -788,7 +788,6 @@ class TabTree {
         } while (cursor.nextSibling());
     }
 }
-TabTree.ParseAnchor = TabFragment.name;
 TabTree.empty = new TabTree([]);
 
 // TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
@@ -862,8 +861,8 @@ class PartialTabParseImplement {
         let node = rawParseTree.resolve(this.parsedPos, 1);
         let curr = node.cursor;
         //look for TabSegment at this position and add it to parse tree
-        while (curr.name != TabTree.ParseAnchor && curr.parent()) { }
-        if (curr.name != TabTree.ParseAnchor) {
+        while (curr.name != TabFragment.AnchorNode && curr.parent()) { }
+        if (curr.name != TabFragment.AnchorNode) {
             this.parsedPos = node.to;
             return { blocked: false, tree: null };
         }

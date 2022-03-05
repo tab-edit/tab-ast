@@ -120,7 +120,6 @@ declare type IteratorSpec = {
 };
 declare class TabTree {
     readonly fragments: TabFragment[];
-    static ParseAnchor: string;
     readonly from: number;
     readonly to: number;
     constructor(fragments: TabFragment[]);
