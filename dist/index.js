@@ -875,8 +875,13 @@ class PartialTabParseImplement {
             return { blocked: false, tree: null };
         }
         let frag = TabFragment.startParse(node, this.editorState);
-        if (frag)
-            this.fragments.push(frag);
+        if (this.fragments.length > 0) {
+            //if there was a previously incomplete parse that was added, replace it with this more complete one.
+            let prevFrag = this.fragments[this.fragments.length];
+            if (prevFrag.from == frag.from)
+                this.fragments.pop();
+        }
+        this.fragments.push(frag);
         this.parsedPos = node.to;
         return { blocked: false, tree: null };
     }
