@@ -2,6 +2,7 @@
 import { ensureSyntaxTree, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
+import { SyntaxNodeTypes } from "../tree/nodes";
 import { TabFragment, TabTree } from "../tree/tab_fragment";
 class Range {
     constructor(readonly from: number, readonly to: number) {}
@@ -125,7 +126,11 @@ export class PartialTabParseImplement implements PartialTabParse {
         let node = (rawParseTree.resolve(this.parsedPos,1) as SyntaxNode);
         let curr = node.cursor;
         //look for TabSegment at this position and add it to parse tree
-        while(curr.name!=TabFragment.AnchorNode && curr.parent()) {}
+        let anchor: SyntaxNode;
+        do {
+            anchor = curr.node;
+        } while (curr.name!=SyntaxNodeTypes.Tablature && curr.parent())
+        curr = anchor.cursor;
         if (curr.name!=TabFragment.AnchorNode) {
             this.parsedPos = node.to;
             return {blocked: false, tree: null};
