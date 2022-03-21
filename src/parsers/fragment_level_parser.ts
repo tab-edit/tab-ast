@@ -142,7 +142,7 @@ export class PartialTabParseImplement implements PartialTabParse {
         let frag = TabFragment.startParse(node, this.editorState);
         if (this.fragments.length>0) {
             //if there was a previously incomplete parse that was added, replace it with this more complete one.
-            let prevFrag = this.fragments[this.fragments.length];
+            let prevFrag = this.fragments[this.fragments.length-1];
             if (prevFrag.from == frag.from) this.fragments.pop();
         }
         this.fragments.push(frag);

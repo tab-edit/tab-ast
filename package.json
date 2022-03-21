@@ -5,7 +5,18 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc --build && rollup -c rollup.config.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
+  },
+  "jest": {
+    "transform": {
+      ".(ts|tsx)": "ts-jest"
+    },
+    "testRegex": "(/__tests__/.*|\\.(test|spec))\\.(ts|tsx|js)$",
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js"
+    ]
   },
   "repository": {
     "type": "git",
@@ -28,16 +39,20 @@
   },
   "homepage": "https://github.com/Stan15/tab-ast#readme",
   "devDependencies": {
+    "@rollup/plugin-typescript": "^8.3.1",
+    "@types/jest": "^27.4.1",
+    "jest": "^27.5.1",
     "rollup": "^2.69.0",
     "rollup-plugin-dts": "^4.1.0",
-    "typescript": "^4.6.2",
-    "@rollup/plugin-typescript": "^8.3.1"
+    "ts-jest": "^27.1.3",
+    "typescript": "^4.6.2"
   },
   "dependencies": {
     "@codemirror/language": "^0.19.7",
     "@codemirror/state": "^0.19.6",
     "@codemirror/view": "^0.19.40",
     "@lezer/common": "^0.15.11",
-    "@lezer/lr": "^0.15.7"
+    "@lezer/lr": "^0.15.7",
+    "parser-tablature": "github:tab-edit/parser-tablature"
   }
 }
