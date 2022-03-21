@@ -21,7 +21,6 @@ test("very general and badly written test", () => {
     A|--------------------------|-0-----------------------|
     E|--------------------------|-------------------------|
     `;
-    // testing second TabSegment in above
     let editorState = EditorState.create({
         doc: str   
     })
@@ -37,6 +36,8 @@ test("very general and badly written test", () => {
             console.log("wait");
         }
     }
+
+    // the expected syntax tree for the first TabSegment in the above input
     let expected = `TabSegment(
         TabBlock(
           LineNaming(
