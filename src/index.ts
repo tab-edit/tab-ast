@@ -12,6 +12,8 @@ export function defineTabLanguageFacet(baseData?: {[name: string]: any}) {
     });
 }
 
+// nightmare to debug. i wanna cry
+
 // This mirrors the `Language` class in @codemirror/language
 export class TabLanguage {
     /// The extension value to install this provider.
@@ -42,7 +44,7 @@ export class TabLanguage {
 
     /// Query whether this language is active at the given position
     isActiveAt(state: EditorState, pos: number, side: -1 | 0 | 1 = -1) {
-        return tabLanguageDataFacetAt(state, pos, side) == this.data;
+        return tabLanguageDataFacetAt(state, pos, side) === this.data;
     }
 
     /// Indicates whether this language allows nested languages. The 
@@ -175,22 +177,24 @@ export class ParseContext  {
     /// @internal
     work(time: number, upto?: number) {
         if (upto != null && upto >= this.state.doc.length) upto = undefined;
-        if (this.tree != TabTree.empty && this.isDone(upto ?? this.state.doc.length)) {
+        if (this.tree !== TabTree.empty && this.isDone(upto ?? this.state.doc.length)) {
             this.takeTree();
             return true;
         }
         return this.withContext(() => {
             let endTime = Date.now() + time;
             if (!this.parse) this.parse = this.startParse();
-            if (upto != null && (this.parse.stoppedAt == null || this.parse.stoppedAt > upto) &&
+            if (upto != null && (this.parse.stoppedAt === null || this.parse.stoppedAt > upto) &&
                 upto < this.state.doc.length) this.parse.stopAt(upto);
             for(;;) {
                 let {tree} = this.parse.advance();
-                if (tree!=null) {
+                if (tree!==null) {
                     this.fragments = this.withoutTempSkipped(TabFragment.addTree(tree, this.fragments));
                     this.treeLen = this.parse.stoppedAt ?? this.state.doc.length;
                     this.tree = tree;
                     this.parse = null;
+                    // TODO: for some reason, this.parse.stoppedAt is always null when we reach the end of an incompltete tree
+                    // and this prevents us from starting another parse
                     if (this.treeLen < (upto ?? this.state.doc.length))
                         this.parse = this.startParse();
                     else
@@ -203,9 +207,9 @@ export class ParseContext  {
 
     /// @internal
     takeTree() {
-        let pos, tree: TabTree | undefined;
+        let pos, tree: TabTree | null | undefined;
         if (this.parse && (pos = this.parse.parsedPos) >= this.treeLen) {
-            if (this.parse.stoppedAt == null || this.parse.stoppedAt > pos) this.parse.stopAt(pos);
+            if (this.parse.stoppedAt === null || this.parse.stoppedAt > pos) this.parse.stopAt(pos);
             this.withContext(() => { while (!(tree = this.parse!.advance(Work.MinSlice).tree)) {} });
             this.treeLen = pos;
             this.tree = tree!;
@@ -255,7 +259,7 @@ export class ParseContext  {
 
     /// @internal
     updateViewport(viewport: {from: number, to: number}) {
-        if (this.viewport.from == viewport.from && this.viewport.to == viewport.to) return false;
+        if (this.viewport.from === viewport.from && this.viewport.to === viewport.to) return false;
         this.viewport = viewport;
         let startLen = this.skipped.length;
         for (let i = 0; i < this.skipped.length; i++) {
@@ -320,7 +324,7 @@ export class ParseContext  {
     isDone(upto: number) {
         upto = Math.min(upto, this.state.doc.length);
         let frags = this.fragments;
-        return this.treeLen >= upto && frags.length && frags[0].from == 0 && frags[0].to >= upto;
+        return this.treeLen >= upto && frags.length && frags[0].from === 0 && frags[frags.length-1].to >= upto;
     }
 
     /// Get the context for the current parse, or `null` if no editor
@@ -354,7 +358,7 @@ class TabLanguageState {
         // state updates with parse work beyond the viewport.
 
         //TODO spend some time to understand this correctly.
-        let upto = this.context.treeLen == tr.startState.doc.length ? undefined
+        let upto = this.context.treeLen === tr.startState.doc.length ? undefined
             : Math.max(tr.changes.mapPos(this.context.treeLen), newCx.viewport.to);
         if (!newCx.work(Work.Apply, upto)) newCx.takeTree();
         return new TabLanguageState(newCx);
@@ -373,7 +377,7 @@ TabLanguage.state = StateField.define<TabLanguageState>({
     create: TabLanguageState.init,
     update(value, tr) {
         for (let e of tr.effects) if (e.is(TabLanguage.setState)) return e.value; //look at the ParseWorker.work() method to see when we dispatch a setState StateEffect.
-        if (tr.startState.facet(tabLanguage) != tr.state.facet(tabLanguage)) return TabLanguageState.init(tr.state);
+        if (tr.startState.facet(tabLanguage) !== tr.state.facet(tabLanguage)) return TabLanguageState.init(tr.state);
         return value.apply(tr); 
     }
 });
@@ -381,7 +385,7 @@ TabLanguage.state = StateField.define<TabLanguageState>({
 //requestIdleCallback is expimental. if it is available on this device, use it to 
 //schedule work when the user is idle to increase percieved responsiveness. 
 //otherwise, schedule work normally
-let requestIdle;
+let requestIdle:any;
 if (typeof requestIdleCallback != "undefined") {
     requestIdle = (callback: (deadline?:IdleDeadline) => void) => {
         let idle = -1;
@@ -503,3 +507,6 @@ export class TabLanguageSupport {
         this.extension = [tabLanguage, support];
     }
 }
+
+export { TabTree };
+export { FragmentCursor } from './tree/cursors';

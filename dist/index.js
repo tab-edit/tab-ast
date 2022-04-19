@@ -1,209 +1,6 @@
 import { StateEffect, StateField, Facet, EditorState } from '@codemirror/state';
 import { ViewPlugin, logException } from '@codemirror/view';
-import { syntaxTreeAvailable, ensureSyntaxTree, syntaxTree } from '@codemirror/language';
-
-/// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked list structure
-// the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
-// init:      [_rootNode_]
-// advance(): [rootNode, _rootNodeChild1, rootNodeChild2, rootNodeChild3..._]
-// advance(): [rootNode, rootNodeChild1, _rootNodeChild1Child1, rootNodeChild1Child2, ..._, rootNodeChild2, rootNodeChild3...]
-// ...
-// This is done using a singly-linked list to make it more efficient than performing array insert operations.
-class LinearParser {
-    constructor(initialNode, 
-    /// The index of all the parsed content will be relative to this offset
-    /// This is usually the index of the source TabFragment, to make 
-    /// for efficient relocation of TabFragments
-    offset, editorState) {
-        this.offset = offset;
-        this.editorState = editorState;
-        // TODO: you might want to change this later to a Uint16array with the following format:
-        // [node1typeID, length, rangeLen, ranges..., node2typeID, ...]
-        // To do this, you will have to modify the ASTNode.increaseLength() function to account 
-        // for the fact that different nodes can have different ranges
-        this.nodeSet = [];
-        this.head = null;
-        this.ancestryStack = [];
-        this.isInvalidCache = null;
-        if (initialNode.name != TabFragment.AnchorNode)
-            throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
-        let initialContent = [new TabSegment({ [TabFragment.AnchorNode]: [initialNode] }, offset)];
-        this.head = new LPNode(initialContent, null);
-    }
-    advance() {
-        if (!this.head)
-            return this.nodeSet;
-        let content = this.head.getNextContent();
-        if (!content) {
-            this.head = this.head.next;
-            this.ancestryStack.pop();
-            return null;
-        }
-        this.nodeSet.push(content);
-        this.ancestryStack.push(this.nodeSet.length - 1);
-        let children = content.parse(this.editorState);
-        for (let ancestor of this.ancestryStack) {
-            this.nodeSet[ancestor].increaseLength(children);
-        }
-        this.head = new LPNode(children, this.head);
-        return null;
-    }
-    get isDone() { return this.head == null; }
-    get isInvalid() {
-        if (this.isInvalidCache != null)
-            return this.isInvalidCache;
-        if (!this.isDone)
-            return false;
-        let nodeSet = this.advance();
-        if (!nodeSet)
-            return true; //this should never be the case cuz we've finished parsing, but just to be sure...
-        let hasMeasureline = false;
-        outer: for (let node of nodeSet) {
-            if (node.name != Measure.name)
-                continue;
-            for (let i = 1; i < node.ranges.length; i += 2) {
-                hasMeasureline = hasMeasureline || this.editorState.doc.slice(node.ranges[i - 1], node.ranges[i]).toString().replace(/\s/g, '').length == 0;
-                if (hasMeasureline)
-                    break outer;
-            }
-        }
-        this.isInvalidCache = hasMeasureline;
-        return this.isInvalidCache;
-    }
-}
-class LPNode {
-    constructor(content, next) {
-        this.content = content;
-        this.next = next;
-        this.contentPointer = 0;
-    }
-    getNextContent() {
-        if (this.contentPointer >= this.content.length)
-            return null;
-        return this.content[this.contentPointer++];
-    }
-}
-
-class TabFragment {
-    constructor(from, to, rootNode, editorState, linearParser) {
-        this.from = from;
-        this.to = to;
-        this.linearParser = linearParser;
-        if (linearParser)
-            return;
-        if (!rootNode) {
-            this.isBlankFragment = true;
-            return;
-        }
-        this.isBlankFragment = false;
-        if (rootNode.name != TabFragment.AnchorNode)
-            throw new Error("Incorrect node type used.");
-        this.linearParser = new LinearParser(rootNode, this.from, editorState);
-    }
-    // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
-    static get AnchorNode() { return SyntaxNodeTypes.TabSegment; }
-    advance() {
-        if (this.isBlankFragment)
-            return FragmentCursor.dud;
-        let nodeSet = this.linearParser.advance();
-        return nodeSet ? this.linearParser.isInvalid ? FragmentCursor.dud : FragmentCursor.from(nodeSet) : null;
-    }
-    /// starts parsing this TabFragment from the raw SyntaxNode. this is made to be 
-    /// incremental to prevent blocking when there are a lot of Tab Blocks on the same line
-    static startParse(node, editorState) {
-        if (node.name != TabFragment.AnchorNode)
-            return null;
-        return new TabFragment(node.from, node.to, node, editorState);
-    }
-    /// Apply a set of edits to an array of fragments, removing
-    /// fragments as necessary to remove edited ranges, and
-    /// adjusting offsets for fragments that moved.
-    static applyChanges(fragments, changes) {
-        if (!changes.length)
-            return fragments;
-        let result = [];
-        let fI = 1, nextF = fragments.length ? fragments[0] : null;
-        for (let cI = 0, off = 0;; cI++) {
-            let nextC = cI < changes.length ? changes[cI] : null;
-            // TODO: be careful here with the <=. test to make sure that it should be <= and not just <.
-            while (nextF && nextF.from <= nextC.toA) {
-                if (!nextC || nextF.to <= nextC.fromA)
-                    result.push(nextF.offset(-off));
-                nextF = fI < fragments.length ? fragments[fI++] : null;
-            }
-            off = nextC.toA - nextC.toB;
-        }
-    }
-    offset(delta) {
-        if (this.from + delta < 0)
-            return null;
-        return new TabFragment(this.from + delta, this.to + delta, null, null, this.linearParser);
-    }
-    /// Create a set of fragments from a freshly parsed tree, or update
-    /// an existing set of fragments by replacing the ones that overlap
-    /// with a tree with content from the new tree.
-    static addTree(tree, fragments = []) {
-        let result = [...tree.getFragments()];
-        for (let f of fragments)
-            if (f.to > tree.to)
-                result.push(f);
-        return result;
-    }
-    static createBlankFragment(from, to) {
-        return new TabFragment(from, to, null, null);
-    }
-    get cursor() {
-        return this.isParsed ? this.advance() : null;
-    }
-    toString() {
-        var _a;
-        return ((_a = this.cursor) === null || _a === void 0 ? void 0 : _a.printTree()) || "";
-    }
-    get isParsed() { return this.isBlankFragment || this.linearParser.isDone; }
-}
-class TabTree {
-    constructor(fragments) {
-        this.fragments = fragments;
-        this.from = fragments[0] ? fragments[0].from : 0;
-        this.to = fragments[fragments.length - 1] ? fragments[fragments.length - 1].to : 0;
-    }
-    static createBlankTree(from, to) {
-        return new TabTree([TabFragment.createBlankFragment(from, to)]);
-    }
-    getFragments() { return this.fragments; }
-    toString() {
-        let str = "Tree(";
-        for (let fragment of this.fragments) {
-            str += fragment.toString();
-        }
-        str += ")";
-        return str;
-    }
-    /// Iterate over the tree and its children in an in-order fashion
-    /// calling the spec.enter() function whenever a node is entered, and 
-    /// spec.leave() when we leave a node. When enter returns false, that 
-    /// node will not have its children iterated over (or leave called).
-    iterate(spec) {
-        for (let frag of this.fragments) {
-            this.iterateHelper(spec, frag.cursor);
-        }
-    }
-    iterateHelper(spec, cursor) {
-        let explore;
-        do {
-            explore = spec.enter(cursor.name, cursor.ranges, () => cursor.node);
-            if (!explore)
-                continue;
-            if (cursor.firstChild()) {
-                this.iterateHelper(spec, cursor);
-                cursor.parent();
-            }
-            if (spec.leave)
-                spec.leave(cursor.name, cursor.ranges, () => cursor.node);
-        } while (cursor.nextSibling());
-    }
-}
-TabTree.empty = new TabTree([]);
+import { ensureSyntaxTree } from '@codemirror/language';
 
 class FragmentCursor {
     constructor(
@@ -223,10 +20,10 @@ class FragmentCursor {
     get node() { return Object.freeze(this.nodeSet[this.pointer]); }
     sourceSyntaxNode() { var _a; return ((_a = this.nodeSet[this.pointer]) === null || _a === void 0 ? void 0 : _a.getRootNodeTraverser()) || null; }
     firstChild() {
-        if (this.nodeSet.length == 0)
+        if (this.nodeSet.length === 0)
             return false;
         let currentPointer = this.pointer;
-        if (this.nodeSet[this.pointer].length == 1)
+        if (this.nodeSet[this.pointer].length === 1)
             return false;
         this.pointer += 1;
         this.ancestryTrace.push(currentPointer);
@@ -239,9 +36,9 @@ class FragmentCursor {
         return true;
     }
     parent() {
-        if (this.nodeSet.length == 0)
+        if (this.nodeSet.length === 0)
             return false;
-        if (this.name == TabFragment.name || this.ancestryTrace.length == 0)
+        if (this.name === TabFragment.name || this.ancestryTrace.length === 0)
             return false;
         this.pointer = this.ancestryTrace[this.ancestryTrace.length - 1];
         this.ancestryTrace.pop();
@@ -253,9 +50,9 @@ class FragmentCursor {
             return false;
         this.firstChild();
         let prevSiblingPointer = this.pointer;
-        if (prevSiblingPointer == currentPointer)
+        if (prevSiblingPointer === currentPointer)
             return false;
-        while (this.nextSibling() && this.pointer != currentPointer) {
+        while (this.nextSibling() && this.pointer !== currentPointer) {
             prevSiblingPointer = this.pointer;
         }
         this.pointer = prevSiblingPointer;
@@ -279,6 +76,8 @@ class FragmentCursor {
         return str;
     }
     printTreeRecursiveHelper() {
+        if (this.nodeSet.length == 0)
+            return "";
         let str = `${this.nodeSet[this.pointer].name}`;
         if (this.firstChild())
             str += "(";
@@ -317,17 +116,17 @@ class AnchoredSyntaxCursor {
         return this.cursor.enter(pos, side, overlays, buffers);
     }
     parent() {
-        if (this.name == TabFragment.AnchorNode)
+        if (this.name === TabFragment.AnchorNode)
             return false;
         return this.cursor.parent();
     }
     nextSibling() {
-        if (this.name == TabFragment.AnchorNode)
+        if (this.name === TabFragment.AnchorNode)
             return false;
         return this.cursor.nextSibling();
     }
     prevSibling() {
-        if (this.name == TabFragment.AnchorNode)
+        if (this.name === TabFragment.AnchorNode)
             return false;
         return this.cursor.nextSibling();
     }
@@ -395,7 +194,7 @@ class ASTNode {
     }
     disposeSourceNodes() {
         // TODO: consider if we should preserve sourceNodes
-        this.sourceNodes = null;
+        this.sourceNodes = {};
     }
     increaseLength(children) { this._length += children.length; }
     get length() { return this._length; }
@@ -428,8 +227,8 @@ class TabSegment extends ASTNode {
         do {
             hasGroupedAllStrings = true;
             for (stringLine of strings) {
-                hasGroupedAllStrings = hasGroupedAllStrings && stringLine.length == 0;
-                if (stringLine.length == 0)
+                hasGroupedAllStrings = hasGroupedAllStrings && stringLine.length === 0;
+                if (stringLine.length === 0)
                     continue;
                 string = stringLine.pop();
                 let stringRange = { from: this.lineDistance(string.from, editorState), to: this.lineDistance(string.to, editorState) };
@@ -440,7 +239,7 @@ class TabSegment extends ASTNode {
                         continue;
                     if (stringRange.to <= anchor.from) {
                         // it doesn't overlap with any existing blocks, but it comes right before this current block
-                        if (bI == 0) {
+                        if (bI === 0) {
                             blocks.unshift([string]); //create a new block
                             blockAnchors.unshift(stringRange); //set this as the block's anchor
                         }
@@ -483,7 +282,7 @@ class TabSegment extends ASTNode {
             }
             if (!anchor || anchor.from >= modifierRange.to) {
                 // if this modifier belongs to no block, add it to the nearest block on its left (and if none, the nearest on its right)
-                let idx = bI == 0 ? 0 : bI - 1;
+                let idx = bI === 0 ? 0 : bI - 1;
                 blockModifiers[idx].push(modifier);
                 continue;
             }
@@ -518,7 +317,9 @@ class TabBlock extends ASTNode {
             let multiplier = string.getChild(SyntaxNodeTypes.Multiplier);
             if (multiplier)
                 result.push(Modifier.from(multiplier.name, { [multiplier.name]: [multiplier] }, this.offset));
-            measureLineNames.push(string.getChild(SyntaxNodeTypes.MeasureLineName));
+            let mlineName = string.getChild(SyntaxNodeTypes.MeasureLineName);
+            if (mlineName)
+                measureLineNames.push(mlineName);
             let measurelines = string.getChildren(SyntaxNodeTypes.MeasureLine);
             for (let i = 0; i < measurelines.length; i++) {
                 if (!measures[i])
@@ -536,6 +337,7 @@ class TabBlock extends ASTNode {
 }
 class Measure extends ASTNode {
     createChildren(editorState) {
+        var _a;
         let lines = this.sourceNodes[SyntaxNodeTypes.MeasureLine];
         let measureComponentsByLine = [];
         let mcAnchors = [];
@@ -552,7 +354,7 @@ class Measure extends ASTNode {
                 if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
                     measureComponentsByLine[i].push(cursorCopy.node);
                     if (cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
-                        mcAnchors[i].push(this.charDistance(line.from, (cursorCopy.node.getChild(SyntaxNodeTypes.Note).from || cursorCopy.from), editorState));
+                        mcAnchors[i].push(this.charDistance(line.from, (((_a = cursorCopy.node.getChild(SyntaxNodeTypes.Note)) === null || _a === void 0 ? void 0 : _a.from) || cursorCopy.from), editorState));
                     }
                     else
                         mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, editorState));
@@ -598,7 +400,7 @@ class Measure extends ASTNode {
                         continue;
                     if (componentAnchor < soundAnchors[soundIdx]) {
                         // component doesn't belong to any existing sound, but comes right before this current sound
-                        if (soundIdx == 0) {
+                        if (soundIdx === 0) {
                             sounds.unshift([component]);
                             soundAnchors.unshift(componentAnchor);
                         }
@@ -661,6 +463,10 @@ class LineNaming extends ASTNode {
     }
 }
 class NoteConnector extends ASTNode {
+    constructor() {
+        super(...arguments);
+        this.notes = [];
+    }
     getRootNodeTraverser() {
         return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
     }
@@ -672,11 +478,11 @@ class NoteConnector extends ASTNode {
         let connector = sourceNodes[this.getType()][0];
         let notes = this.getNotesFromNoteConnector(connector);
         this.notes = [];
-        if (notes.length == 0) {
+        if (notes.length === 0) {
             this.notes = [];
             return [connector.from - offset, connector.to - offset];
         }
-        else if (notes.length == 1) {
+        else if (notes.length === 1) {
             this.notes = notes;
             return [Math.min(connector.from, notes[0].from) - offset, Math.max(connector.to, notes[0].to) - offset];
         }
@@ -732,6 +538,8 @@ class NoteDecorator extends ASTNode {
     }
     createChildren() {
         let note = this.sourceNodes[this.getType()][0].getChild(SyntaxNodeTypes.Note);
+        if (!note)
+            return [];
         return [Note.from(note.name, { [note.name]: [note] }, this.offset)];
     }
     static from(type, sourceNodes, offset) {
@@ -790,6 +598,208 @@ class Multiplier extends Modifier {
     getType() { return SyntaxNodeTypes.Multiplier; }
 }
 
+/// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked list structure
+// the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
+// init:      [_rootNode_]
+// advance(): [rootNode, _rootNodeChild1, rootNodeChild2, rootNodeChild3..._]
+// advance(): [rootNode, rootNodeChild1, _rootNodeChild1Child1, rootNodeChild1Child2, ..._, rootNodeChild2, rootNodeChild3...]
+// ...
+// This is done using a singly-linked list to make it more efficient than performing array insert operations.
+class LinearParser {
+    constructor(initialNode, 
+    /// The index of all the parsed content will be relative to this offset
+    /// This is usually the index of the source TabFragment, to make 
+    /// for efficient relocation of TabFragments
+    offset, editorState) {
+        this.offset = offset;
+        this.editorState = editorState;
+        // TODO: you might want to change this later to a Uint16array with the following format:
+        // [node1typeID, length, rangeLen, ranges..., node2typeID, ...]
+        // To do this, you will have to modify the ASTNode.increaseLength() function to account 
+        // for the fact that different nodes can have different ranges
+        this.nodeSet = [];
+        this.head = null;
+        this.ancestryStack = [];
+        this.cachedIsValid = null;
+        if (initialNode.name !== TabFragment.AnchorNode)
+            throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
+        let initialContent = [new TabSegment({ [TabFragment.AnchorNode]: [initialNode] }, offset)];
+        this.head = new LPNode(initialContent, null);
+    }
+    advance() {
+        if (!this.head)
+            return this.nodeSet;
+        let content = this.head.getNextContent();
+        if (!content) {
+            this.head = this.head.next;
+            this.ancestryStack.pop();
+            return null;
+        }
+        this.nodeSet.push(content);
+        this.ancestryStack.push(this.nodeSet.length - 1);
+        let children = content.parse(this.editorState);
+        for (let ancestor of this.ancestryStack) {
+            this.nodeSet[ancestor].increaseLength(children);
+        }
+        this.head = new LPNode(children, this.head);
+        return null;
+    }
+    get isDone() { return this.head == null; }
+    get isValid() {
+        if (this.cachedIsValid !== null)
+            return this.cachedIsValid;
+        if (!this.isDone)
+            return false;
+        let nodeSet = this.advance();
+        if (!nodeSet)
+            return true; //this should never be the case cuz we've finished parsing, but just to be sure...
+        let hasMeasureline = false;
+        outer: for (let node of nodeSet) {
+            if (node.name !== Measure.name)
+                continue;
+            for (let i = 1; i < node.ranges.length; i += 2) {
+                hasMeasureline = hasMeasureline || this.editorState.doc.slice(node.offset + node.ranges[i - 1], node.offset + node.ranges[i]).toString().replace(/\s/g, '').length !== 0;
+                if (hasMeasureline)
+                    break outer;
+            }
+        }
+        this.cachedIsValid = hasMeasureline;
+        return this.cachedIsValid;
+    }
+}
+class LPNode {
+    constructor(content, next) {
+        this.content = content;
+        this.next = next;
+        this.contentPointer = 0;
+    }
+    getNextContent() {
+        if (this.contentPointer >= this.content.length)
+            return null;
+        return this.content[this.contentPointer++];
+    }
+}
+
+class TabFragment {
+    constructor(from, to, rootNode, editorState, linearParser) {
+        this.from = from;
+        this.to = to;
+        this.linearParser = linearParser;
+        this.isBlankFragment = false;
+        if (linearParser)
+            return;
+        if (!rootNode) {
+            this.isBlankFragment = true;
+            return;
+        }
+        if (rootNode.name !== TabFragment.AnchorNode)
+            throw new Error("Incorrect node type used.");
+        this.linearParser = new LinearParser(rootNode, this.from, editorState);
+    }
+    // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
+    static get AnchorNode() { return SyntaxNodeTypes.TabSegment; }
+    advance() {
+        if (this.isBlankFragment)
+            return FragmentCursor.dud;
+        let nodeSet = this.linearParser.advance();
+        return nodeSet ? (this.linearParser.isValid ? FragmentCursor.from(nodeSet) : FragmentCursor.dud) : null;
+    }
+    /// starts parsing this TabFragment from the raw SyntaxNode. this is made to be 
+    /// incremental to prevent blocking when there are a lot of Tab Blocks on the same line
+    static startParse(node, editorState) {
+        if (node.name !== TabFragment.AnchorNode)
+            return null;
+        return new TabFragment(node.from, node.to, node, editorState);
+    }
+    /// Apply a set of edits to an array of fragments, removing
+    /// fragments as necessary to remove edited ranges, and
+    /// adjusting offsets for fragments that moved.
+    static applyChanges(fragments, changes) {
+        if (!changes.length)
+            return fragments;
+        let result = [];
+        let fI = 1, nextF = fragments.length ? fragments[0] : null;
+        for (let cI = 0, off = 0; nextF; cI++) {
+            let nextC = cI < changes.length ? changes[cI] : null;
+            // TODO: be careful here with the <=. test to make sure that it should be <= and not just <.
+            while (nextF && (!nextC || nextF.from <= nextC.toA)) {
+                if (!nextC || nextF.to <= nextC.fromA)
+                    result.push(nextF.offset(-off));
+                nextF = fI < fragments.length ? fragments[fI++] : null;
+            }
+            off = nextC ? nextC.toA - nextC.toB : 0;
+        }
+        return result;
+    }
+    offset(delta) {
+        return new TabFragment(this.from + delta, this.to + delta, null, null, this.linearParser);
+    }
+    /// Create a set of fragments from a freshly parsed tree, or update
+    /// an existing set of fragments by replacing the ones that overlap
+    /// with a tree with content from the new tree.
+    static addTree(tree, fragments = []) {
+        let result = [...tree.getFragments()];
+        for (let f of fragments)
+            if (f.to > tree.to)
+                result.push(f);
+        return result;
+    }
+    static createBlankFragment(from, to) {
+        return new TabFragment(from, to, null, null);
+    }
+    get cursor() {
+        return this.isParsed ? this.advance() : null;
+    }
+    toString() {
+        var _a;
+        return ((_a = this.cursor) === null || _a === void 0 ? void 0 : _a.printTree()) || "";
+    }
+    get isParsed() { return this.isBlankFragment || this.linearParser.isDone; }
+}
+class TabTree {
+    constructor(fragments) {
+        this.fragments = fragments;
+        this.from = fragments[0] ? fragments[0].from : 0;
+        this.to = fragments[fragments.length - 1] ? fragments[fragments.length - 1].to : 0;
+    }
+    static createBlankTree(from, to) {
+        return new TabTree([TabFragment.createBlankFragment(from, to)]);
+    }
+    getFragments() { return this.fragments; }
+    toString() {
+        let str = "Tree(";
+        for (let fragment of this.fragments) {
+            str += fragment.toString();
+        }
+        str += ")";
+        return str;
+    }
+    /// Iterate over the tree and its children in an in-order fashion
+    /// calling the spec.enter() function whenever a node is entered, and 
+    /// spec.leave() when we leave a node. When enter returns false, that 
+    /// node will not have its children iterated over (or leave called).
+    iterate(spec) {
+        for (let frag of this.fragments) {
+            this.iterateHelper(spec, frag.cursor);
+        }
+    }
+    iterateHelper(spec, cursor) {
+        let explore;
+        do {
+            explore = spec.enter(cursor.name, cursor.ranges, () => cursor.node);
+            if (explore === false)
+                continue;
+            if (cursor.firstChild()) {
+                this.iterateHelper(spec, cursor);
+                cursor.parent();
+            }
+            if (spec.leave)
+                spec.leave(cursor.name, cursor.ranges, () => cursor.node);
+        } while (cursor.nextSibling());
+    }
+}
+TabTree.empty = new TabTree([]);
+
 // TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
 class Range {
     constructor(from, to) {
@@ -844,49 +854,53 @@ class PartialTabParseImplement {
         return this.fragments;
     }
     advance(catchupTimeout = 25) {
-        if (this.stoppedAt != null && this.parsedPos > this.stoppedAt)
-            return { blocked: false, tree: this.finish() };
-        if (this.parsedPos >= this.editorState.doc.length)
-            return { blocked: false, tree: this.finish() };
-        if (!syntaxTreeAvailable(this.editorState, this.parsedPos)) {
-            if (catchupTimeout > 0)
-                ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
-            return { blocked: true, tree: null };
-        }
-        if (this.fragments.length != 0 && !this.fragments[this.fragments.length - 1].isParsed) {
+        if (this.fragments.length !== 0 && !this.fragments[this.fragments.length - 1].isParsed) {
             this.fragments[this.fragments.length - 1].advance();
             return { blocked: false, tree: null };
         }
+        if (this.stoppedAt !== null && this.parsedPos > this.stoppedAt)
+            return { blocked: false, tree: this.finish() };
+        if (this.parsedPos >= this.editorState.doc.length)
+            return { blocked: false, tree: this.finish() };
+        let rawSyntaxTree = ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
+        if (!rawSyntaxTree)
+            return { blocked: true, tree: null };
+        // TODO: we should probably not make reusing a fragment one single action because that creates a lot of overhead. we can quickly reuse multiple items, but doing it one by one wastes resources
         if (this.cachedFragments && this.reuseFragment(this.parsedPos))
             return { blocked: false, tree: null };
-        let rawParseTree = syntaxTree(this.editorState);
-        let node = rawParseTree.resolve(this.parsedPos, 1);
-        let curr = node.cursor;
-        //look for TabSegment at this position and add it to parse tree
-        while (curr.name != SyntaxNodeTypes.Tablature && curr.parent()) {
-            if (curr.name == SyntaxNodeTypes.Tablature)
+        // TODO: maybe handle case here where we may not want to reuse fragment because the fragment has been changed from what it actually is (maybe the rawparsetree didn't parse teh full tabsegment last time so we want to replace it with newly, fully parsed tab segment)
+        let cursor = rawSyntaxTree.cursor();
+        if (this.parsedPos === cursor.to) // we're at the end of partially-parsed raw syntax tree.
+            return { blocked: true, tree: null };
+        let endOfSyntaxTree = !cursor.firstChild();
+        while (cursor.to <= this.parsedPos && !endOfSyntaxTree) {
+            if ((endOfSyntaxTree = !cursor.nextSibling()))
                 break;
-            node = curr.node;
         }
-        if (node.name != TabFragment.AnchorNode) {
-            let frag = TabFragment.createBlankFragment(this.parsedPos, node.to);
+        let skipTo = null;
+        if (endOfSyntaxTree) { // end of partial syntax tree
+            skipTo = rawSyntaxTree.cursor().to;
+        }
+        else if (cursor.from > this.parsedPos) { // no node covers this.parsedPos (maybe it was skipped when parsing, like whitespace)
+            skipTo = cursor.from;
+        }
+        else if (cursor.name !== TabFragment.AnchorNode) {
+            skipTo = cursor.to;
+        }
+        if (skipTo) {
+            skipTo = (cursor.from == cursor.to) ? skipTo + 1 : skipTo; // for zero-width error nodes, prevent being stuck in loop.
+            let frag = TabFragment.createBlankFragment(this.parsedPos, skipTo);
             this.fragments.push(frag);
-            this.parsedPos = node.to;
+            this.parsedPos = skipTo;
             return { blocked: false, tree: null };
         }
-        let frag = TabFragment.startParse(node, this.editorState);
-        if (this.fragments.length > 0) {
-            //if there was a previously incomplete parse that was added, replace it with this more complete one.
-            let prevFrag = this.fragments[this.fragments.length - 1];
-            if (prevFrag.from == frag.from)
-                this.fragments.pop();
-        }
+        let frag = TabFragment.startParse(cursor.node, this.editorState);
         this.fragments.push(frag);
-        this.parsedPos = node.to;
+        this.parsedPos = cursor.to;
         return { blocked: false, tree: null };
     }
     stopAt(pos) {
-        if (this.stoppedAt != null && this.stoppedAt < pos)
+        if (this.stoppedAt !== null && this.stoppedAt < pos)
             throw new RangeError("Can't move stoppedAt forward");
         this.stoppedAt = pos;
     }
@@ -904,7 +918,7 @@ class PartialTabParseImplement {
                     // skipping fragment with the start of the subsequent, 
                     // proper fragment, so to make sure that we do not select 
                     // the skipping fragment instead of the proper fragment, we confirm
-                    if (fI < this.cachedFragments.length
+                    if (fI < this.cachedFragments.length - 1
                         && !this.cachedFragments[fI + 1].isBlankFragment
                         && this.cachedFragments[fI + 1].from <= start)
                         fI++;
@@ -924,6 +938,7 @@ function defineTabLanguageFacet(baseData) {
         combine: baseData ? values => values.concat(baseData) : undefined
     });
 }
+// nightmare to debug. i wanna cry
 // This mirrors the `Language` class in @codemirror/language
 class TabLanguage {
     ///
@@ -944,7 +959,7 @@ class TabLanguage {
     }
     /// Query whether this language is active at the given position
     isActiveAt(state, pos, side = -1) {
-        return tabLanguageDataFacetAt(state) == this.data;
+        return tabLanguageDataFacetAt(state) === this.data;
     }
     /// Indicates whether this language allows nested languages. The 
     /// default implementation returns true.
@@ -1041,7 +1056,7 @@ class ParseContext {
     work(time, upto) {
         if (upto != null && upto >= this.state.doc.length)
             upto = undefined;
-        if (this.tree != TabTree.empty && this.isDone(upto !== null && upto !== void 0 ? upto : this.state.doc.length)) {
+        if (this.tree !== TabTree.empty && this.isDone(upto !== null && upto !== void 0 ? upto : this.state.doc.length)) {
             this.takeTree();
             return true;
         }
@@ -1050,16 +1065,18 @@ class ParseContext {
             let endTime = Date.now() + time;
             if (!this.parse)
                 this.parse = this.startParse();
-            if (upto != null && (this.parse.stoppedAt == null || this.parse.stoppedAt > upto) &&
+            if (upto != null && (this.parse.stoppedAt === null || this.parse.stoppedAt > upto) &&
                 upto < this.state.doc.length)
                 this.parse.stopAt(upto);
             for (;;) {
                 let { tree } = this.parse.advance();
-                if (tree != null) {
+                if (tree !== null) {
                     this.fragments = this.withoutTempSkipped(TabFragment.addTree(tree, this.fragments));
                     this.treeLen = (_a = this.parse.stoppedAt) !== null && _a !== void 0 ? _a : this.state.doc.length;
                     this.tree = tree;
                     this.parse = null;
+                    // TODO: for some reason, this.parse.stoppedAt is always null when we reach the end of an incompltete tree
+                    // and this prevents us from starting another parse
                     if (this.treeLen < (upto !== null && upto !== void 0 ? upto : this.state.doc.length))
                         this.parse = this.startParse();
                     else
@@ -1074,7 +1091,7 @@ class ParseContext {
     takeTree() {
         let pos, tree;
         if (this.parse && (pos = this.parse.parsedPos) >= this.treeLen) {
-            if (this.parse.stoppedAt == null || this.parse.stoppedAt > pos)
+            if (this.parse.stoppedAt === null || this.parse.stoppedAt > pos)
                 this.parse.stopAt(pos);
             this.withContext(() => { while (!(tree = this.parse.advance(25 /* MinSlice */).tree)) { } });
             this.treeLen = pos;
@@ -1125,7 +1142,7 @@ class ParseContext {
     }
     /// @internal
     updateViewport(viewport) {
-        if (this.viewport.from == viewport.from && this.viewport.to == viewport.to)
+        if (this.viewport.from === viewport.from && this.viewport.to === viewport.to)
             return false;
         this.viewport = viewport;
         let startLen = this.skipped.length;
@@ -1190,7 +1207,7 @@ class ParseContext {
     isDone(upto) {
         upto = Math.min(upto, this.state.doc.length);
         let frags = this.fragments;
-        return this.treeLen >= upto && frags.length && frags[0].from == 0 && frags[0].to >= upto;
+        return this.treeLen >= upto && frags.length && frags[0].from === 0 && frags[frags.length - 1].to >= upto;
     }
     /// Get the context for the current parse, or `null` if no editor
     /// parse is in progress
@@ -1215,7 +1232,7 @@ class TabLanguageState {
         // end position or the end of the viewport, to avoid slowing down
         // state updates with parse work beyond the viewport.
         //TODO spend some time to understand this correctly.
-        let upto = this.context.treeLen == tr.startState.doc.length ? undefined
+        let upto = this.context.treeLen === tr.startState.doc.length ? undefined
             : Math.max(tr.changes.mapPos(this.context.treeLen), newCx.viewport.to);
         if (!newCx.work(20 /* Apply */, upto))
             newCx.takeTree();
@@ -1235,7 +1252,7 @@ TabLanguage.state = StateField.define({
         for (let e of tr.effects)
             if (e.is(TabLanguage.setState))
                 return e.value; //look at the ParseWorker.work() method to see when we dispatch a setState StateEffect.
-        if (tr.startState.facet(tabLanguage) != tr.state.facet(tabLanguage))
+        if (tr.startState.facet(tabLanguage) !== tr.state.facet(tabLanguage))
             return TabLanguageState.init(tr.state);
         return value.apply(tr);
     }
@@ -1356,5 +1373,5 @@ class TabLanguageSupport {
     }
 }
 
-export { ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map

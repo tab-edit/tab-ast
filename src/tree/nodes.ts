@@ -62,7 +62,7 @@ export abstract class ASTNode {
     
     protected disposeSourceNodes() {
         // TODO: consider if we should preserve sourceNodes
-        this.sourceNodes = null;
+        this.sourceNodes = {};
     }
     
     // the length an ASTNode and all its children take up in their source array
@@ -106,10 +106,10 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
             hasGroupedAllStrings = true;
 
             for (stringLine of strings) {
-                hasGroupedAllStrings = hasGroupedAllStrings && stringLine.length==0;
-                if (stringLine.length==0) continue;
+                hasGroupedAllStrings = hasGroupedAllStrings && stringLine.length===0;
+                if (stringLine.length===0) continue;
                 
-                string = stringLine.pop();
+                string = stringLine.pop()!;
                 let stringRange = {from: this.lineDistance(string.from, editorState), to: this.lineDistance(string.to, editorState)};
                 isStringPlaced = false;
                 for (bI=firstUncompletedBlockIdx; bI<blockAnchors.length; bI++) {
@@ -117,7 +117,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
                     if (anchor.to <= stringRange.from) continue;
                     if (stringRange.to <= anchor.from) {
                         // it doesn't overlap with any existing blocks, but it comes right before this current block
-                        if (bI==0) {
+                        if (bI===0) {
                             blocks.unshift([string]); //create a new block
                             blockAnchors.unshift(stringRange); //set this as the block's anchor
                         } else {
@@ -158,7 +158,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
             }
             if (!anchor || anchor.from >= modifierRange.to) {
                 // if this modifier belongs to no block, add it to the nearest block on its left (and if none, the nearest on its right)
-                let idx = bI==0 ? 0 : bI-1;
+                let idx = bI===0 ? 0 : bI-1;
                 blockModifiers[idx].push(modifier);
                 continue;
             }
@@ -202,7 +202,8 @@ export class TabBlock extends ASTNode {
             let multiplier = string.getChild(SyntaxNodeTypes.Multiplier);
             if (multiplier) result.push(Modifier.from(multiplier.name, {[multiplier.name]: [multiplier]}, this.offset));
 
-            measureLineNames.push(string.getChild(SyntaxNodeTypes.MeasureLineName));
+            let mlineName = string.getChild(SyntaxNodeTypes.MeasureLineName);
+            if (mlineName) measureLineNames.push(mlineName);
             let measurelines = string.getChildren(SyntaxNodeTypes.MeasureLine);
             for (let i=0; i<measurelines.length; i++) {
                 if (!measures[i]) measures[i] = [];
@@ -231,12 +232,12 @@ export class Measure extends ASTNode {
             let cursor = line.cursor;
             if (!cursor.firstChild()) continue;
             let cursorCopy = cursor.node.cursor;
-            let connectorRecursionRoot: TreeCursor = null;
+            let connectorRecursionRoot: TreeCursor | null = null;
             do {
                 if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
                     measureComponentsByLine[i].push(cursorCopy.node);
                     if (cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
-                        mcAnchors[i].push(this.charDistance(line.from, (cursorCopy.node.getChild(SyntaxNodeTypes.Note).from || cursorCopy.from), editorState));
+                        mcAnchors[i].push(this.charDistance(line.from, (cursorCopy.node.getChild(SyntaxNodeTypes.Note)?.from || cursorCopy.from), editorState));
                     } else mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, editorState));
                     if (connectorRecursionRoot!=null) {
                         cursorCopy = connectorRecursionRoot;
@@ -279,7 +280,7 @@ export class Measure extends ASTNode {
                     if (soundAnchors[soundIdx] < componentAnchor) continue;
                     if (componentAnchor < soundAnchors[soundIdx]) {
                         // component doesn't belong to any existing sound, but comes right before this current sound
-                        if (soundIdx==0) {
+                        if (soundIdx===0) {
                             sounds.unshift([component]);
                             soundAnchors.unshift(componentAnchor);
                         } else {
@@ -346,7 +347,7 @@ class LineNaming extends ASTNode {
 
 export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
     abstract getType(): string;
-    private notes: SyntaxNode[];
+    private notes: SyntaxNode[] = [];
 
     public getRootNodeTraverser(): AnchoredSyntaxCursor {
         return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
@@ -360,10 +361,10 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
         let connector = sourceNodes[this.getType()][0];
         let notes = this.getNotesFromNoteConnector(connector);
         this.notes = [];
-        if (notes.length==0) {
+        if (notes.length===0) {
             this.notes = [];
             return [connector.from - offset, connector.to - offset];
-        } else if (notes.length==1) {
+        } else if (notes.length===1) {
             this.notes = notes;
             return [Math.min(connector.from, notes[0].from) - offset, Math.max(connector.to, notes[0].to) - offset];
         } else {
@@ -375,7 +376,7 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
     private getNotesFromNoteConnector(connector: SyntaxNode) {
         let notes:SyntaxNode[] = [];
         let cursor = connector.cursor;
-        let nestedConnectorExit: SyntaxNode = null;
+        let nestedConnectorExit: SyntaxNode | null = null;
         if (!cursor.firstChild()) return [];
         do {
             if (cursor.type.is(SyntaxNodeTypes.Note) || cursor.type.is(SyntaxNodeTypes.NoteDecorator)) {
@@ -402,7 +403,7 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
             case SyntaxNodeTypes.Pull: return new Pull(sourceNodes, offset);
             case SyntaxNodeTypes.Slide: return new Slide(sourceNodes, offset);
         }
-        return null;
+        return null!;
     }
 }
 export class Hammer extends NoteConnector { getType() { return SyntaxNodeTypes.Hammer } }
@@ -416,6 +417,7 @@ export abstract class NoteDecorator extends ASTNode implements SingleSpanNode {
     }
     protected createChildren(): ASTNode[] {
         let note = this.sourceNodes[this.getType()][0].getChild(SyntaxNodeTypes.Note);
+        if (!note) return [];
         return [Note.from(note.name, {[note.name]: [note]}, this.offset)];
     }
     static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): NoteDecorator {
@@ -423,7 +425,7 @@ export abstract class NoteDecorator extends ASTNode implements SingleSpanNode {
             case SyntaxNodeTypes.Grace: return new Grace(sourceNodes, offset);
             case SyntaxNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
         }
-        return null;
+        return null!;
     }
 }
 export class Grace extends NoteDecorator { getType() { return SyntaxNodeTypes.Grace } }
@@ -439,7 +441,7 @@ export abstract class Note extends ASTNode  implements SingleSpanNode {
         switch(type) {
             case SyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
         }
-        return null;
+        return null!;
     }
 }
 export class Fret extends Note { getType(): string { return SyntaxNodeTypes.Fret } }
@@ -459,7 +461,7 @@ abstract class Modifier extends ASTNode  implements SingleSpanNode {
             case SyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
             case SyntaxNodeTypes.Modifier: return new Multiplier(sourceNodes, offset);
         }
-        return null;
+        return null!;
     }
 }
 class Repeat extends Modifier { getType() { return SyntaxNodeTypes.Repeat } }

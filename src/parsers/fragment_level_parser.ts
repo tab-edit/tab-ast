@@ -1,5 +1,5 @@
 // TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
-import { ensureSyntaxTree, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
+import { ensureSyntaxTree, Language, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
 import { SyntaxNodeTypes } from "../tree/nodes";
@@ -107,51 +107,57 @@ export class PartialTabParseImplement implements PartialTabParse {
     }
 
     advance(catchupTimeout: number = 25): {blocked:boolean, tree: TabTree|null} {
-        if (this.stoppedAt != null && this.parsedPos > this.stoppedAt)
+        if (this.fragments.length!==0 && !this.fragments[this.fragments.length-1].isParsed) {
+            this.fragments[this.fragments.length-1].advance();
+            return {blocked: false, tree: null};
+        }
+        if (this.stoppedAt !== null && this.parsedPos > this.stoppedAt)
             return {blocked: false, tree: this.finish()};
             
         if (this.parsedPos >= this.editorState.doc.length)
             return {blocked: false, tree: this.finish()}
 
-        if (!syntaxTreeAvailable(this.editorState, this.parsedPos)) {
-            if (catchupTimeout > 0) 
-                ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
-            return {blocked: true, tree: null};
+        let rawSyntaxTree = ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
+        if (!rawSyntaxTree) return {blocked: true, tree: null}
+
+        // TODO: we should probably not make reusing a fragment one single action because that creates a lot of overhead. we can quickly reuse multiple items, but doing it one by one wastes resources
+        if (this.cachedFragments && this.reuseFragment(this.parsedPos)) return {blocked: false, tree: null}
+        // TODO: maybe handle case here where we may not want to reuse fragment because the fragment has been changed from what it actually is (maybe the rawparsetree didn't parse teh full tabsegment last time so we want to replace it with newly, fully parsed tab segment)
+            
+        let cursor = rawSyntaxTree.cursor();
+        if (this.parsedPos===cursor.to) // we're at the end of partially-parsed raw syntax tree.
+            return {blocked: true, tree: null}
+
+        let endOfSyntaxTree = !cursor.firstChild();
+        while (cursor.to <= this.parsedPos && !endOfSyntaxTree) {
+            if ((endOfSyntaxTree = !cursor.nextSibling())) break;
         }
 
-        if (this.fragments.length!=0 && !this.fragments[this.fragments.length-1].isParsed) {
-            this.fragments[this.fragments.length-1].advance();
-            return {blocked: false, tree: null};
+        let skipTo: number | null = null;
+        if (endOfSyntaxTree) {   // end of partial syntax tree
+            skipTo = rawSyntaxTree.cursor().to;
+        } else if (cursor.from > this.parsedPos) {  // no node covers this.parsedPos (maybe it was skipped when parsing, like whitespace)
+            skipTo = cursor.from;
+        } else if (cursor.name!==TabFragment.AnchorNode) {
+            skipTo = cursor.to;
         }
-        if (this.cachedFragments && this.reuseFragment(this.parsedPos)) return {blocked: false, tree: null}
-            
-        let rawParseTree = syntaxTree(this.editorState);
-        let node = (rawParseTree.resolve(this.parsedPos,1) as SyntaxNode);
-        let curr = node.cursor;
-        //look for TabSegment at this position and add it to parse tree
-        while (curr.name!=SyntaxNodeTypes.Tablature && curr.parent()) {
-            if (curr.name==SyntaxNodeTypes.Tablature) break;
-            node = curr.node;
-        }
-        if (node.name!=TabFragment.AnchorNode) {
-            let frag = TabFragment.createBlankFragment(this.parsedPos, node.to);
+
+        if (skipTo) {
+            skipTo = (cursor.from==cursor.to) ? skipTo+1 : skipTo; // for zero-width error nodes, prevent being stuck in loop.
+            let frag = TabFragment.createBlankFragment(this.parsedPos, skipTo);
             this.fragments.push(frag);
-            this.parsedPos = node.to;
+            this.parsedPos = skipTo;
             return {blocked: false, tree: null};
         }
-        let frag = TabFragment.startParse(node, this.editorState);
-        if (this.fragments.length>0) {
-            //if there was a previously incomplete parse that was added, replace it with this more complete one.
-            let prevFrag = this.fragments[this.fragments.length-1];
-            if (prevFrag.from == frag.from) this.fragments.pop();
-        }
+
+        let frag = TabFragment.startParse(cursor.node, this.editorState)!;
         this.fragments.push(frag);
-        this.parsedPos = node.to;
+        this.parsedPos = cursor.to;
         return {blocked: false, tree: null};
     }
 
     stopAt(pos: number) {
-        if (this.stoppedAt != null && this.stoppedAt < pos) throw new RangeError("Can't move stoppedAt forward");
+        if (this.stoppedAt !== null && this.stoppedAt < pos) throw new RangeError("Can't move stoppedAt forward");
         this.stoppedAt = pos;
     }
 
@@ -169,7 +175,7 @@ export class PartialTabParseImplement implements PartialTabParse {
                     // skipping fragment with the start of the subsequent, 
                     // proper fragment, so to make sure that we do not select 
                     // the skipping fragment instead of the proper fragment, we confirm
-                    if (fI<this.cachedFragments.length 
+                    if (fI<this.cachedFragments.length-1 
                         && !this.cachedFragments[fI+1].isBlankFragment 
                         && this.cachedFragments[fI+1].from <= start
                     ) fI++;

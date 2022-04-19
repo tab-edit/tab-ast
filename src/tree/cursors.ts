@@ -30,9 +30,9 @@ export class FragmentCursor implements Cursor {
     sourceSyntaxNode() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
 
     firstChild() {
-        if (this.nodeSet.length==0) return false;
+        if (this.nodeSet.length===0) return false;
         let currentPointer = this.pointer;
-        if (this.nodeSet[this.pointer].length==1) return false;
+        if (this.nodeSet[this.pointer].length===1) return false;
         this.pointer+=1;
         this.ancestryTrace.push(currentPointer);
         return true;
@@ -45,8 +45,8 @@ export class FragmentCursor implements Cursor {
     }
 
     parent() {
-        if (this.nodeSet.length==0) return false;
-        if (this.name==TabFragment.name || this.ancestryTrace.length==0) return false;
+        if (this.nodeSet.length===0) return false;
+        if (this.name===TabFragment.name || this.ancestryTrace.length===0) return false;
         this.pointer = this.ancestryTrace[this.ancestryTrace.length-1];
         this.ancestryTrace.pop();
         return true;
@@ -58,9 +58,9 @@ export class FragmentCursor implements Cursor {
 
         this.firstChild();
         let prevSiblingPointer = this.pointer;
-        if (prevSiblingPointer==currentPointer) return false;
+        if (prevSiblingPointer===currentPointer) return false;
 
-        while (this.nextSibling() && this.pointer!=currentPointer) {
+        while (this.nextSibling() && this.pointer!==currentPointer) {
             prevSiblingPointer = this.pointer;
         }
         this.pointer = prevSiblingPointer;
@@ -87,6 +87,7 @@ export class FragmentCursor implements Cursor {
         return str;
     }
     private printTreeRecursiveHelper() {
+        if (this.nodeSet.length==0) return "";
         let str = `${this.nodeSet[this.pointer].name}`;
         if (this.firstChild()) str += "(";
         else return str;
@@ -134,15 +135,15 @@ export class AnchoredSyntaxCursor implements Cursor {
         return this.cursor.enter(pos, side, overlays, buffers);
     }
     parent() {
-        if (this.name==TabFragment.AnchorNode) return false;
+        if (this.name===TabFragment.AnchorNode) return false;
         return this.cursor.parent();
     }
     nextSibling() {
-        if (this.name==TabFragment.AnchorNode) return false;
+        if (this.name===TabFragment.AnchorNode) return false;
         return this.cursor.nextSibling();
     }
     prevSibling() {
-        if (this.name==TabFragment.AnchorNode) return false;
+        if (this.name===TabFragment.AnchorNode) return false;
         return this.cursor.nextSibling();
     }
 }

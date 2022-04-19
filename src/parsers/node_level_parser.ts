@@ -25,7 +25,7 @@ export class LinearParser {
         readonly offset: number,
         private editorState: EditorState
     ) {
-        if (initialNode.name!=TabFragment.AnchorNode) throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
+        if (initialNode.name!==TabFragment.AnchorNode) throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
         let initialContent = [new TabSegment({[TabFragment.AnchorNode]: [initialNode]}, offset)]
         this.head = new LPNode(initialContent, null);
     }
@@ -50,23 +50,23 @@ export class LinearParser {
         return null;
     }
     get isDone() { return this.head==null }
-    private isInvalidCache: boolean | null = null;
-    get isInvalid() {
-        if (this.isInvalidCache!=null) return this.isInvalidCache;
+    private cachedIsValid: boolean | null = null;
+    get isValid() {
+        if (this.cachedIsValid!==null) return this.cachedIsValid;
         if (!this.isDone) return false;
         let nodeSet = this.advance();
         if (!nodeSet) return true; //this should never be the case cuz we've finished parsing, but just to be sure...
 
         let hasMeasureline = false;
         outer: for (let node of nodeSet) {
-            if (node.name!=Measure.name) continue;
+            if (node.name!==Measure.name) continue;
             for (let i=1; i<node.ranges.length; i+=2) {
-                hasMeasureline = hasMeasureline || this.editorState.doc.slice(node.ranges[i-1], node.ranges[i]).toString().replace(/\s/g, '').length == 0
+                hasMeasureline = hasMeasureline || this.editorState.doc.slice(node.offset+node.ranges[i-1], node.offset+node.ranges[i]).toString().replace(/\s/g, '').length !== 0
                 if (hasMeasureline) break outer;
             }
         }
-        this.isInvalidCache = hasMeasureline;
-        return this.isInvalidCache;
+        this.cachedIsValid = hasMeasureline;
+        return this.cachedIsValid;
     }
 }
 

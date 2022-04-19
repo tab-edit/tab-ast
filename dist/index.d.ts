@@ -118,8 +118,8 @@ declare class LinearParser {
     private ancestryStack;
     advance(): ASTNode[] | null;
     get isDone(): boolean;
-    private isInvalidCache;
-    get isInvalid(): boolean;
+    private cachedIsValid;
+    get isValid(): boolean;
 }
 
 declare class TabFragment {
@@ -296,4 +296,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };

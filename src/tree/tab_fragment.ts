@@ -16,27 +16,27 @@ export class TabFragment {
         editorState: EditorState,
         private linearParser?: LinearParser
     ) {
+        this.isBlankFragment = false;
         if (linearParser) return;
         if (!rootNode) {
             this.isBlankFragment = true;
             return;
         }
-        this.isBlankFragment = false;
-        if (rootNode.name!=TabFragment.AnchorNode) throw new Error("Incorrect node type used.");
+        if (rootNode.name!==TabFragment.AnchorNode) throw new Error("Incorrect node type used.");
         this.linearParser = new LinearParser(rootNode, this.from, editorState);
     }
 
     advance(): FragmentCursor | null {
         if (this.isBlankFragment) return FragmentCursor.dud;
-        let nodeSet = this.linearParser.advance();
-        return nodeSet ? this.linearParser.isInvalid ? FragmentCursor.dud : FragmentCursor.from(nodeSet) : null;
+        let nodeSet = this.linearParser!.advance();
+        return nodeSet ? (this.linearParser!.isValid ? FragmentCursor.from(nodeSet) : FragmentCursor.dud) : null;
     }
 
     
     /// starts parsing this TabFragment from the raw SyntaxNode. this is made to be 
     /// incremental to prevent blocking when there are a lot of Tab Blocks on the same line
     static startParse(node: SyntaxNode, editorState: EditorState): TabFragment | null {
-        if (node.name != TabFragment.AnchorNode) return null;
+        if (node.name !== TabFragment.AnchorNode) return null;
         return new TabFragment(node.from, node.to, node, editorState);
     }
 
@@ -47,20 +47,20 @@ export class TabFragment {
         if (!changes.length) return fragments;
         let result: TabFragment[] = [];
         let fI = 1, nextF = fragments.length ? fragments[0] : null;
-        for (let cI = 0, off=0;; cI++) {
+        for (let cI = 0, off=0;nextF; cI++) {
             let nextC = cI < changes.length ? changes[cI] : null;
             // TODO: be careful here with the <=. test to make sure that it should be <= and not just <.
-            while (nextF && nextF.from <= nextC.toA) {
+            while (nextF && (!nextC || nextF.from <= nextC.toA)) {
                 if (!nextC || nextF.to<=nextC.fromA) result.push(nextF.offset(-off));
                 nextF = fI < fragments.length ? fragments[fI++] : null;
             }
-            off = nextC.toA - nextC.toB;
+            off = nextC ? nextC.toA - nextC.toB : 0;
         }
+        return result;
     }
 
-    private offset(delta: number):TabFragment|null {
-        if (this.from+delta < 0) return null;
-        return new TabFragment(this.from+delta, this.to+delta, null, null, this.linearParser);
+    private offset(delta: number):TabFragment {
+        return new TabFragment(this.from+delta, this.to+delta, null!, null!, this.linearParser);
     }
     /// Create a set of fragments from a freshly parsed tree, or update
     /// an existing set of fragments by replacing the ones that overlap
@@ -71,7 +71,7 @@ export class TabFragment {
         return result
     }
     static createBlankFragment(from: number, to: number) {
-        return new TabFragment(from, to, null, null);
+        return new TabFragment(from, to, null!, null!);
     }
 
     get cursor() {
@@ -82,7 +82,7 @@ export class TabFragment {
         return this.cursor?.printTree() || "";
     }
     
-    get isParsed() { return this.isBlankFragment || this.linearParser.isDone }
+    get isParsed() { return this.isBlankFragment || this.linearParser!.isDone }
 }
 
 
@@ -136,15 +136,15 @@ export class TabTree {
     /// node will not have its children iterated over (or leave called).
     iterate(spec: IteratorSpec) {
         for (let frag of this.fragments) {
-            this.iterateHelper(spec, frag.cursor);
+            this.iterateHelper(spec, frag.cursor!);
         }
     }
 
     private iterateHelper(spec: IteratorSpec, cursor: FragmentCursor) {
-        let explore: boolean;
+        let explore: boolean | undefined;
         do {
             explore = spec.enter(cursor.name, cursor.ranges, () => cursor.node);
-            if (!explore) continue;
+            if (explore===false) continue;
             if (cursor.firstChild()) {
                 this.iterateHelper(spec, cursor);
                 cursor.parent();

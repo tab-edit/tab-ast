@@ -10,6 +10,6 @@ export declare class LinearParser {
     private ancestryStack;
     advance(): ASTNode[] | null;
     get isDone(): boolean;
-    private isInvalidCache;
-    get isInvalid(): boolean;
+    private cachedIsValid;
+    get isValid(): boolean;
 }
