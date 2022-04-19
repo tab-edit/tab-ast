@@ -109,5 +109,5 @@ export declare class TabLanguageSupport {
     extension: Extension;
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
-export { TabTree };
+export { TabTree } from './tree/tab_fragment';
 export { FragmentCursor } from './tree/cursors';

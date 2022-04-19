@@ -508,5 +508,5 @@ export class TabLanguageSupport {
     }
 }
 
-export { TabTree };
+export { TabTree } from './tree/tab_fragment';
 export { FragmentCursor } from './tree/cursors';
