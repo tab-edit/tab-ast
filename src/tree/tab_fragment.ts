@@ -2,7 +2,7 @@
 import { EditorState } from "@codemirror/state";
 import { ASTNode, SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
-import { ASTCursor } from "./cursors";
+import { ASTCursor, FragmentCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 
 // TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
@@ -105,6 +105,10 @@ export class TabTree {
     constructor(readonly fragments: TabFragment[]) {
         this.from = fragments[0] ? fragments[0].from : 0;
         this.to = fragments[fragments.length-1] ? fragments[fragments.length-1].to : 0;
+    }
+
+    cursor() {
+        return FragmentCursor.from(this.fragments);
     }
 
     static createBlankTree(from: number, to: number) {

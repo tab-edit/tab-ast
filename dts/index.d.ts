@@ -110,5 +110,5 @@ export declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 export { TabTree } from './tree/tab_fragment';
-export { ASTCursor } from './tree/cursors';
+export { ASTCursor, FragmentCursor, Cursor } from './tree/cursors';
 export { ASTNode } from './tree/nodes';

@@ -1,6 +1,7 @@
 import { SyntaxNode } from "@lezer/common";
 import { ASTNode } from "./nodes";
-interface Cursor<T> {
+import { TabFragment } from "./tab_fragment";
+export interface Cursor<T> {
     name: string;
     node: Readonly<T>;
     firstChild(): boolean;
@@ -10,16 +11,35 @@ interface Cursor<T> {
     nextSibling(): boolean;
     fork(): Cursor<T>;
 }
+export declare class FragmentCursor implements Cursor<ASTNode> {
+    private fragSet;
+    private pointer;
+    private currentCursor?;
+    private constructor();
+    static from(fragSet: TabFragment[], startingPos?: number): FragmentCursor;
+    get name(): string;
+    get ranges(): number[];
+    get node(): Readonly<ASTNode>;
+    sourceSyntaxNode(): AnchoredSyntaxCursor;
+    getAncestors(): Readonly<ASTNode>[];
+    firstChild(): boolean;
+    lastChild(): boolean;
+    parent(): boolean;
+    prevSibling(): boolean;
+    nextSibling(): boolean;
+    fork(): FragmentCursor;
+}
 export declare class ASTCursor implements Cursor<ASTNode> {
     private nodeSet;
     private pointer;
     private ancestryTrace;
     private constructor();
-    static from(nodeSet: ASTNode[], startingPos?: number): ASTCursor;
+    static from(nodeSet: ASTNode[]): ASTCursor;
     get name(): string;
     get ranges(): number[];
     get node(): Readonly<ASTNode>;
     sourceSyntaxNode(): AnchoredSyntaxCursor;
+    getAncestors(): Readonly<ASTNode>[];
     firstChild(): boolean;
     lastChild(): boolean;
     parent(): boolean;

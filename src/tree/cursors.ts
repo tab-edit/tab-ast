@@ -2,7 +2,7 @@ import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { ASTNode, SingleSpanNode } from "./nodes";
 import { TabFragment } from "./tab_fragment";
 
-interface Cursor<T> {
+export interface Cursor<T> {
     name: string;
     node: Readonly<T>;
     firstChild(): boolean;
@@ -13,6 +13,46 @@ interface Cursor<T> {
     fork(): Cursor<T>;
 }
 
+export class FragmentCursor implements Cursor<ASTNode> {
+    private constructor(
+        // might want to change this to an array of numbers.
+        private fragSet: TabFragment[],
+        private pointer: number = 0,
+        private currentCursor?: ASTCursor
+    ) {
+        if (!this.currentCursor) this.currentCursor = fragSet[pointer].cursor;
+    }
+    public static from(fragSet: TabFragment[], startingPos?: number) {
+        if (!fragSet || !fragSet.length) return null;
+        return new FragmentCursor(fragSet, startingPos || 0);
+    }
+    get name() { return this.currentCursor.name }
+    get ranges() { return this.currentCursor.ranges }
+    get node() { return this.currentCursor.node }
+    sourceSyntaxNode() { return this.currentCursor.sourceSyntaxNode() }
+    getAncestors() { return this.currentCursor.getAncestors() }
+    firstChild() { return this.currentCursor.firstChild() }
+    lastChild() { return this.currentCursor.lastChild() }
+    parent() { return this.currentCursor.parent() }
+    prevSibling() {
+        if (!this.currentCursor.fork().parent() && this.pointer>0) {
+            this.pointer = this.pointer-1;
+            this.currentCursor = this.fragSet[this.pointer].cursor;
+            return true;
+        }
+        return this.currentCursor.prevSibling();
+    }
+    nextSibling() {
+        if (!this.currentCursor.fork().parent() && this.pointer+1 < this.fragSet.length) {
+            this.pointer = this.pointer+1;
+            this.currentCursor = this.fragSet[this.pointer].cursor;
+            return true;
+        }
+        return this.currentCursor.nextSibling();
+    }
+    fork() { return new FragmentCursor(this.fragSet, this.pointer, this.currentCursor) }
+}
+
 export class ASTCursor implements Cursor<ASTNode> {
     private constructor(
         // might want to change this to an array of numbers.
@@ -20,15 +60,19 @@ export class ASTCursor implements Cursor<ASTNode> {
         private pointer: number = 0,
         private ancestryTrace: number[] = []
     ) {}
-    public static from(nodeSet: ASTNode[], startingPos?: number) {
+    public static from(nodeSet: ASTNode[]) {
         if (!nodeSet || !nodeSet.length) return null;
-        return new ASTCursor(nodeSet, startingPos || 0, []);
+        return new ASTCursor(nodeSet, 0, []);
     }
 
     get name() { return this.nodeSet[this.pointer].name }
     get ranges() { return Array.from(this.nodeSet[this.pointer].ranges) }
     get node() { return Object.freeze(this.nodeSet[this.pointer]) }
     sourceSyntaxNode() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
+
+    getAncestors() {
+        return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
+    }
 
     firstChild() {
         if (this.nodeSet.length===0) return false;

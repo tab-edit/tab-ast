@@ -2,6 +2,47 @@ import { StateEffect, StateField, Facet, EditorState } from '@codemirror/state';
 import { ViewPlugin, logException } from '@codemirror/view';
 import { ensureSyntaxTree } from '@codemirror/language';
 
+class FragmentCursor {
+    constructor(
+    // might want to change this to an array of numbers.
+    fragSet, pointer = 0, currentCursor) {
+        this.fragSet = fragSet;
+        this.pointer = pointer;
+        this.currentCursor = currentCursor;
+        if (!this.currentCursor)
+            this.currentCursor = fragSet[pointer].cursor;
+    }
+    static from(fragSet, startingPos) {
+        if (!fragSet || !fragSet.length)
+            return null;
+        return new FragmentCursor(fragSet, startingPos || 0);
+    }
+    get name() { return this.currentCursor.name; }
+    get ranges() { return this.currentCursor.ranges; }
+    get node() { return this.currentCursor.node; }
+    sourceSyntaxNode() { return this.currentCursor.sourceSyntaxNode(); }
+    getAncestors() { return this.currentCursor.getAncestors(); }
+    firstChild() { return this.currentCursor.firstChild(); }
+    lastChild() { return this.currentCursor.lastChild(); }
+    parent() { return this.currentCursor.parent(); }
+    prevSibling() {
+        if (!this.currentCursor.fork().parent() && this.pointer > 0) {
+            this.pointer = this.pointer - 1;
+            this.currentCursor = this.fragSet[this.pointer].cursor;
+            return true;
+        }
+        return this.currentCursor.prevSibling();
+    }
+    nextSibling() {
+        if (!this.currentCursor.fork().parent() && this.pointer + 1 < this.fragSet.length) {
+            this.pointer = this.pointer + 1;
+            this.currentCursor = this.fragSet[this.pointer].cursor;
+            return true;
+        }
+        return this.currentCursor.nextSibling();
+    }
+    fork() { return new FragmentCursor(this.fragSet, this.pointer, this.currentCursor); }
+}
 class ASTCursor {
     constructor(
     // might want to change this to an array of numbers.
@@ -10,15 +51,18 @@ class ASTCursor {
         this.pointer = pointer;
         this.ancestryTrace = ancestryTrace;
     }
-    static from(nodeSet, startingPos) {
+    static from(nodeSet) {
         if (!nodeSet || !nodeSet.length)
             return null;
-        return new ASTCursor(nodeSet, startingPos || 0, []);
+        return new ASTCursor(nodeSet, 0, []);
     }
     get name() { return this.nodeSet[this.pointer].name; }
     get ranges() { return Array.from(this.nodeSet[this.pointer].ranges); }
     get node() { return Object.freeze(this.nodeSet[this.pointer]); }
     sourceSyntaxNode() { var _a; return ((_a = this.nodeSet[this.pointer]) === null || _a === void 0 ? void 0 : _a.getRootNodeTraverser()) || null; }
+    getAncestors() {
+        return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
+    }
     firstChild() {
         if (this.nodeSet.length === 0)
             return false;
@@ -768,6 +812,9 @@ class TabTree {
         this.from = fragments[0] ? fragments[0].from : 0;
         this.to = fragments[fragments.length - 1] ? fragments[fragments.length - 1].to : 0;
     }
+    cursor() {
+        return FragmentCursor.from(this.fragments);
+    }
     static createBlankTree(from, to) {
         return new TabTree([TabFragment.createBlankFragment(from, to)]);
     }
@@ -1388,5 +1435,5 @@ class TabLanguageSupport {
     }
 }
 
-export { ASTCursor, ASTNode, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTCursor, ASTNode, FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map

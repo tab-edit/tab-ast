@@ -14,16 +14,35 @@ interface Cursor<T> {
     nextSibling(): boolean;
     fork(): Cursor<T>;
 }
+declare class FragmentCursor implements Cursor<ASTNode> {
+    private fragSet;
+    private pointer;
+    private currentCursor?;
+    private constructor();
+    static from(fragSet: TabFragment[], startingPos?: number): FragmentCursor;
+    get name(): string;
+    get ranges(): number[];
+    get node(): Readonly<ASTNode>;
+    sourceSyntaxNode(): AnchoredSyntaxCursor;
+    getAncestors(): Readonly<ASTNode>[];
+    firstChild(): boolean;
+    lastChild(): boolean;
+    parent(): boolean;
+    prevSibling(): boolean;
+    nextSibling(): boolean;
+    fork(): FragmentCursor;
+}
 declare class ASTCursor implements Cursor<ASTNode> {
     private nodeSet;
     private pointer;
     private ancestryTrace;
     private constructor();
-    static from(nodeSet: ASTNode[], startingPos?: number): ASTCursor;
+    static from(nodeSet: ASTNode[]): ASTCursor;
     get name(): string;
     get ranges(): number[];
     get node(): Readonly<ASTNode>;
     sourceSyntaxNode(): AnchoredSyntaxCursor;
+    getAncestors(): Readonly<ASTNode>[];
     firstChild(): boolean;
     lastChild(): boolean;
     parent(): boolean;
@@ -153,6 +172,7 @@ declare class TabTree {
     readonly from: number;
     readonly to: number;
     constructor(fragments: TabFragment[]);
+    cursor(): FragmentCursor;
     static createBlankTree(from: number, to: number): TabTree;
     getFragments(): TabFragment[];
     toString(): string;
@@ -299,4 +319,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { ASTCursor, ASTNode, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTCursor, ASTNode, Cursor, FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };

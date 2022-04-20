@@ -1,7 +1,7 @@
 import { EditorState } from "@codemirror/state";
 import { ASTNode, SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
-import { ASTCursor } from "./cursors";
+import { ASTCursor, FragmentCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 export declare class TabFragment {
     readonly from: number;
@@ -31,6 +31,7 @@ export declare class TabTree {
     readonly from: number;
     readonly to: number;
     constructor(fragments: TabFragment[]);
+    cursor(): FragmentCursor;
     static createBlankTree(from: number, to: number): TabTree;
     getFragments(): TabFragment[];
     toString(): string;
