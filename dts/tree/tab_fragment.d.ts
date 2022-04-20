@@ -21,7 +21,7 @@ export declare class TabFragment {
     get isParsed(): boolean;
 }
 declare type IteratorSpec = {
-    enter: (node: Readonly<ASTNode>) => false | undefined;
+    enter: (node: Readonly<ASTNode>) => false | void;
     leave?: (node: Readonly<ASTNode>) => void;
     from?: number;
     to?: number;

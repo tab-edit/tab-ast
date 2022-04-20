@@ -91,7 +91,7 @@ export class TabFragment {
 type IteratorSpec = {
     enter: (
         node: Readonly<ASTNode>
-    ) => false | undefined,
+    ) => false | void,
     leave?: (
         node: Readonly<ASTNode>
     ) => void,
@@ -134,7 +134,7 @@ export class TabTree {
     private iterateHelper(spec: IteratorSpec, cursor: ASTCursor) {
         let explore: boolean | undefined;
         do {
-            explore = spec.enter(cursor.node);
+            explore = spec.enter(cursor.node)===false ? false : true;
             if (explore===false) continue;
             if (cursor.firstChild()) {
                 this.iterateHelper(spec, cursor);

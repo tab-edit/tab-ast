@@ -792,7 +792,7 @@ class TabTree {
     iterateHelper(spec, cursor) {
         let explore;
         do {
-            explore = spec.enter(cursor.node);
+            explore = spec.enter(cursor.node) === false ? false : true;
             if (explore === false)
                 continue;
             if (cursor.firstChild()) {
