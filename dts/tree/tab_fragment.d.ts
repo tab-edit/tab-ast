@@ -31,7 +31,7 @@ export declare class TabTree {
     readonly from: number;
     readonly to: number;
     constructor(fragments: TabFragment[]);
-    cursor(): FragmentCursor;
+    get cursor(): FragmentCursor;
     static createBlankTree(from: number, to: number): TabTree;
     getFragments(): TabFragment[];
     toString(): string;

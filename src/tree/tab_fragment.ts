@@ -107,7 +107,7 @@ export class TabTree {
         this.to = fragments[fragments.length-1] ? fragments[fragments.length-1].to : 0;
     }
 
-    cursor() {
+    get cursor() {
         return FragmentCursor.from(this.fragments);
     }
 
@@ -130,12 +130,10 @@ export class TabTree {
     /// spec.leave() when we leave a node. When enter returns false, that 
     /// node will not have its children iterated over (or leave called).
     iterate(spec: IteratorSpec) {
-        for (let frag of this.fragments) {
-            this.iterateHelper(spec, frag.cursor);
-        }
+        this.iterateHelper(spec, this.cursor);
     }
 
-    private iterateHelper(spec: IteratorSpec, cursor: ASTCursor) {
+    private iterateHelper(spec: IteratorSpec, cursor: FragmentCursor) {
         let explore: boolean | undefined;
         do {
             explore = spec.enter(cursor.node)===false ? false : true;
