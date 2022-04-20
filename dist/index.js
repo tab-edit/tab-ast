@@ -184,6 +184,7 @@ class ASTNode {
         this._length = 1;
         this.ranges = Uint16Array.from(this.computeRanges(sourceNodes, offset));
     }
+    get isSingleSpanNode() { return typeof this.getRootNodeTraverser === "function"; }
     get name() { return this.constructor.name; }
     get isParsed() { return this.parsed; }
     parse(editorState) {

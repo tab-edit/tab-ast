@@ -39,6 +39,7 @@ export interface SingleSpanNode {
     getRootNodeTraverser(): AnchoredSyntaxCursor | null;
 }
 export abstract class ASTNode {
+    public get isSingleSpanNode() { return typeof (this as any).getRootNodeTraverser === "function" }
     public ranges: Uint16Array;
     constructor(
         /// mapping of SyntaxNode type => syntax nodes where the syntax nodes are the source

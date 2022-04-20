@@ -36,6 +36,7 @@ export declare abstract class ASTNode {
         [type: string]: SyntaxNode[];
     };
     readonly offset: number;
+    get isSingleSpanNode(): boolean;
     ranges: Uint16Array;
     constructor(sourceNodes: {
         [type: string]: SyntaxNode[];
