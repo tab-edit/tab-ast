@@ -1,24 +1,25 @@
 import * as _codemirror_state from '@codemirror/state';
-import { EditorState, Facet, Extension, StateField, ChangeDesc, Transaction } from '@codemirror/state';
+import { Text, EditorState, Facet, Extension, StateField, ChangeDesc, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import * as _lezer_common from '@lezer/common';
 import { SyntaxNode, ChangedRange } from '@lezer/common';
 
-interface Cursor {
+interface Cursor<T> {
     name: string;
-    node: Readonly<ASTNode> | Readonly<OffsetSyntaxNode>;
+    node: Readonly<T>;
     firstChild(): boolean;
     lastChild(): boolean;
     parent(): boolean;
     prevSibling(): boolean;
     nextSibling(): boolean;
+    fork(): Cursor<T>;
 }
-declare class FragmentCursor implements Cursor {
+declare class ASTCursor implements Cursor<ASTNode> {
     private nodeSet;
     private pointer;
     private ancestryTrace;
     private constructor();
-    static from(nodeSet: ASTNode[]): FragmentCursor;
+    static from(nodeSet: ASTNode[], startingPos?: number): ASTCursor;
     get name(): string;
     get ranges(): number[];
     get node(): Readonly<ASTNode>;
@@ -28,12 +29,12 @@ declare class FragmentCursor implements Cursor {
     parent(): boolean;
     prevSibling(): boolean;
     nextSibling(): boolean;
-    fork(): FragmentCursor;
-    static readonly dud: FragmentCursor;
+    fork(): ASTCursor;
+    static readonly dud: ASTCursor;
     printTree(): string;
     private printTreeRecursiveHelper;
 }
-declare class AnchoredSyntaxCursor implements Cursor {
+declare class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
     private anchorOffset;
     private cursor;
     constructor(startingNode: SyntaxNode, anchorOffset: number);
@@ -48,6 +49,7 @@ declare class AnchoredSyntaxCursor implements Cursor {
     parent(): boolean;
     nextSibling(): boolean;
     prevSibling(): boolean;
+    fork(): AnchoredSyntaxCursor;
 }
 declare class OffsetSyntaxNode {
     private node;
@@ -92,15 +94,15 @@ declare abstract class ASTNode {
     };
     readonly offset: number;
     get isSingleSpanNode(): boolean;
-    ranges: Uint16Array;
+    readonly ranges: Uint16Array;
     constructor(sourceNodes: {
         [type: string]: SyntaxNode[];
     }, offset: number);
     get name(): string;
-    protected parsed: boolean;
+    private parsed;
     get isParsed(): boolean;
-    parse(editorState: EditorState): ASTNode[];
-    protected abstract createChildren(editorState: EditorState): ASTNode[];
+    parse(sourceText: Text): ASTNode[];
+    protected abstract createChildren(sourceText: Text): ASTNode[];
     protected disposeSourceNodes(): void;
     private _length;
     increaseLength(children: ASTNode[]): void;
@@ -112,10 +114,10 @@ declare abstract class ASTNode {
 
 declare class LinearParser {
     readonly offset: number;
-    private editorState;
+    private sourceText;
     private nodeSet;
     private head;
-    constructor(initialNode: SyntaxNode, offset: number, editorState: EditorState);
+    constructor(initialNode: SyntaxNode, offset: number, sourceText: Text);
     private ancestryStack;
     advance(): ASTNode[] | null;
     get isDone(): boolean;
@@ -130,19 +132,19 @@ declare class TabFragment {
     static get AnchorNode(): SyntaxNodeTypes;
     readonly isBlankFragment: boolean;
     constructor(from: number, to: number, rootNode: SyntaxNode, editorState: EditorState, linearParser?: LinearParser);
-    advance(): FragmentCursor | null;
+    advance(): ASTCursor | null;
     static startParse(node: SyntaxNode, editorState: EditorState): TabFragment | null;
     static applyChanges(fragments: readonly TabFragment[], changes: readonly ChangedRange[]): readonly TabFragment[];
     private offset;
     static addTree(tree: TabTree, fragments?: readonly TabFragment[]): TabFragment[];
     static createBlankFragment(from: number, to: number): TabFragment;
-    get cursor(): FragmentCursor;
+    get cursor(): ASTCursor;
     toString(): string;
     get isParsed(): boolean;
 }
 declare type IteratorSpec = {
-    enter: (type: string, ranges: number[], get: () => Readonly<ASTNode>) => false | undefined;
-    leave?: (type: string, ranges: number[], get: () => Readonly<ASTNode>) => void;
+    enter: (node: Readonly<ASTNode>) => false | undefined;
+    leave?: (node: Readonly<ASTNode>) => void;
     from?: number;
     to?: number;
 };
@@ -297,4 +299,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { ASTNode, FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTCursor, ASTNode, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };

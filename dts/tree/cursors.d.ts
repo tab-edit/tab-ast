@@ -1,20 +1,21 @@
 import { SyntaxNode } from "@lezer/common";
 import { ASTNode } from "./nodes";
-interface Cursor {
+interface Cursor<T> {
     name: string;
-    node: Readonly<ASTNode> | Readonly<OffsetSyntaxNode>;
+    node: Readonly<T>;
     firstChild(): boolean;
     lastChild(): boolean;
     parent(): boolean;
     prevSibling(): boolean;
     nextSibling(): boolean;
+    fork(): Cursor<T>;
 }
-export declare class FragmentCursor implements Cursor {
+export declare class ASTCursor implements Cursor<ASTNode> {
     private nodeSet;
     private pointer;
     private ancestryTrace;
     private constructor();
-    static from(nodeSet: ASTNode[]): FragmentCursor;
+    static from(nodeSet: ASTNode[], startingPos?: number): ASTCursor;
     get name(): string;
     get ranges(): number[];
     get node(): Readonly<ASTNode>;
@@ -24,12 +25,12 @@ export declare class FragmentCursor implements Cursor {
     parent(): boolean;
     prevSibling(): boolean;
     nextSibling(): boolean;
-    fork(): FragmentCursor;
-    static readonly dud: FragmentCursor;
+    fork(): ASTCursor;
+    static readonly dud: ASTCursor;
     printTree(): string;
     private printTreeRecursiveHelper;
 }
-export declare class AnchoredSyntaxCursor implements Cursor {
+export declare class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
     private anchorOffset;
     private cursor;
     constructor(startingNode: SyntaxNode, anchorOffset: number);
@@ -44,6 +45,7 @@ export declare class AnchoredSyntaxCursor implements Cursor {
     parent(): boolean;
     nextSibling(): boolean;
     prevSibling(): boolean;
+    fork(): AnchoredSyntaxCursor;
 }
 declare class OffsetSyntaxNode {
     private node;

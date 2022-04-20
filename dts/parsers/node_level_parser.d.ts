@@ -1,12 +1,12 @@
-import { EditorState } from "@codemirror/state";
+import { Text } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
 import { ASTNode } from "../tree/nodes";
 export declare class LinearParser {
     readonly offset: number;
-    private editorState;
+    private sourceText;
     private nodeSet;
     private head;
-    constructor(initialNode: SyntaxNode, offset: number, editorState: EditorState);
+    constructor(initialNode: SyntaxNode, offset: number, sourceText: Text);
     private ancestryStack;
     advance(): ASTNode[] | null;
     get isDone(): boolean;

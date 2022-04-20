@@ -1,7 +1,7 @@
 import { EditorState } from "@codemirror/state";
 import { ASTNode, SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
-import { FragmentCursor } from "./cursors";
+import { ASTCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 export declare class TabFragment {
     readonly from: number;
@@ -10,19 +10,19 @@ export declare class TabFragment {
     static get AnchorNode(): SyntaxNodeTypes;
     readonly isBlankFragment: boolean;
     constructor(from: number, to: number, rootNode: SyntaxNode, editorState: EditorState, linearParser?: LinearParser);
-    advance(): FragmentCursor | null;
+    advance(): ASTCursor | null;
     static startParse(node: SyntaxNode, editorState: EditorState): TabFragment | null;
     static applyChanges(fragments: readonly TabFragment[], changes: readonly ChangedRange[]): readonly TabFragment[];
     private offset;
     static addTree(tree: TabTree, fragments?: readonly TabFragment[]): TabFragment[];
     static createBlankFragment(from: number, to: number): TabFragment;
-    get cursor(): FragmentCursor;
+    get cursor(): ASTCursor;
     toString(): string;
     get isParsed(): boolean;
 }
 declare type IteratorSpec = {
-    enter: (type: string, ranges: number[], get: () => Readonly<ASTNode>) => false | undefined;
-    leave?: (type: string, ranges: number[], get: () => Readonly<ASTNode>) => void;
+    enter: (node: Readonly<ASTNode>) => false | undefined;
+    leave?: (node: Readonly<ASTNode>) => void;
     from?: number;
     to?: number;
 };

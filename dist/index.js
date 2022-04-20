@@ -2,7 +2,7 @@ import { StateEffect, StateField, Facet, EditorState } from '@codemirror/state';
 import { ViewPlugin, logException } from '@codemirror/view';
 import { ensureSyntaxTree } from '@codemirror/language';
 
-class FragmentCursor {
+class ASTCursor {
     constructor(
     // might want to change this to an array of numbers.
     nodeSet, pointer = 0, ancestryTrace = []) {
@@ -10,10 +10,10 @@ class FragmentCursor {
         this.pointer = pointer;
         this.ancestryTrace = ancestryTrace;
     }
-    static from(nodeSet) {
+    static from(nodeSet, startingPos) {
         if (!nodeSet || !nodeSet.length)
             return null;
-        return new FragmentCursor(nodeSet, 0, []);
+        return new ASTCursor(nodeSet, startingPos || 0, []);
     }
     get name() { return this.nodeSet[this.pointer].name; }
     get ranges() { return Array.from(this.nodeSet[this.pointer].ranges); }
@@ -69,7 +69,7 @@ class FragmentCursor {
         return true;
     }
     fork() {
-        return new FragmentCursor(this.nodeSet, this.pointer, this.ancestryTrace);
+        return new ASTCursor(this.nodeSet, this.pointer, this.ancestryTrace);
     }
     printTree() {
         let str = this.printTreeRecursiveHelper();
@@ -95,7 +95,7 @@ class FragmentCursor {
         return str;
     }
 }
-FragmentCursor.dud = new FragmentCursor([]);
+ASTCursor.dud = new ASTCursor([]);
 // Don't know when we will use this, but it is for the user to 
 // be able to access and traverse the raw syntax nodes while 
 // still maintaining the fact that all nodes' positions are 
@@ -129,6 +129,9 @@ class AnchoredSyntaxCursor {
         if (this.name === TabFragment.AnchorNode)
             return false;
         return this.cursor.nextSibling();
+    }
+    fork() {
+        return new AnchoredSyntaxCursor(this.cursor.node, this.anchorOffset);
     }
 }
 class OffsetSyntaxNode {
@@ -187,11 +190,11 @@ class ASTNode {
     get isSingleSpanNode() { return typeof this.getRootNodeTraverser === "function"; }
     get name() { return this.constructor.name; }
     get isParsed() { return this.parsed; }
-    parse(editorState) {
+    parse(sourceText) {
         if (this.parsed)
             return [];
         this.parsed = true;
-        return this.createChildren(editorState);
+        return this.createChildren(sourceText);
     }
     disposeSourceNodes() {
         // TODO: consider if we should preserve sourceNodes
@@ -214,7 +217,7 @@ class TabSegment extends ASTNode {
     getRootNodeTraverser() {
         return new AnchoredSyntaxCursor(this.sourceNodes[SyntaxNodeTypes.TabSegment][0], this.offset);
     }
-    createChildren(editorState) {
+    createChildren(sourceText) {
         let modifiers = this.sourceNodes[SyntaxNodeTypes.TabSegment][0].getChildren(SyntaxNodeTypes.Modifier);
         let strings = [];
         for (let line of this.sourceNodes[SyntaxNodeTypes.TabSegment][0].getChildren(SyntaxNodeTypes.TabSegmentLine)) {
@@ -232,7 +235,7 @@ class TabSegment extends ASTNode {
                 if (stringLine.length === 0)
                     continue;
                 string = stringLine.pop();
-                let stringRange = { from: this.lineDistance(string.from, editorState), to: this.lineDistance(string.to, editorState) };
+                let stringRange = { from: this.lineDistance(string.from, sourceText), to: this.lineDistance(string.to, sourceText) };
                 isStringPlaced = false;
                 for (bI = firstUncompletedBlockIdx; bI < blockAnchors.length; bI++) {
                     anchor = blockAnchors[bI];
@@ -274,7 +277,7 @@ class TabSegment extends ASTNode {
         let modifierRange;
         bI = 0;
         for (let modifier of modifiers) {
-            modifierRange = { from: this.lineDistance(modifier.from, editorState), to: this.lineDistance(modifier.to, editorState) };
+            modifierRange = { from: this.lineDistance(modifier.from, sourceText), to: this.lineDistance(modifier.to, sourceText) };
             anchor = blockAnchors[bI];
             if (!blockModifiers[bI])
                 blockModifiers.push([]);
@@ -299,8 +302,8 @@ class TabSegment extends ASTNode {
         this.disposeSourceNodes();
         return tabBlocks;
     }
-    lineDistance(idx, editorState) {
-        return idx - editorState.doc.lineAt(idx).from;
+    lineDistance(idx, sourceText) {
+        return idx - sourceText.lineAt(idx).from;
     }
 }
 class TabBlock extends ASTNode {
@@ -337,7 +340,7 @@ class TabBlock extends ASTNode {
     }
 }
 class Measure extends ASTNode {
-    createChildren(editorState) {
+    createChildren(sourceText) {
         var _a;
         let lines = this.sourceNodes[SyntaxNodeTypes.MeasureLine];
         let measureComponentsByLine = [];
@@ -355,10 +358,10 @@ class Measure extends ASTNode {
                 if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
                     measureComponentsByLine[i].push(cursorCopy.node);
                     if (cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
-                        mcAnchors[i].push(this.charDistance(line.from, (((_a = cursorCopy.node.getChild(SyntaxNodeTypes.Note)) === null || _a === void 0 ? void 0 : _a.from) || cursorCopy.from), editorState));
+                        mcAnchors[i].push(this.charDistance(line.from, (((_a = cursorCopy.node.getChild(SyntaxNodeTypes.Note)) === null || _a === void 0 ? void 0 : _a.from) || cursorCopy.from), sourceText));
                     }
                     else
-                        mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, editorState));
+                        mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, sourceText));
                     if (connectorRecursionRoot != null) {
                         cursorCopy = connectorRecursionRoot;
                         connectorRecursionRoot = null;
@@ -373,11 +376,11 @@ class Measure extends ASTNode {
                 let connector = cursorCopy.node;
                 let firstNote = connector.getChild(SyntaxNodeTypes.Note) || connector.getChild(SyntaxNodeTypes.NoteDecorator);
                 if (firstNote) {
-                    mcAnchors[i].push(this.charDistance(line.from, firstNote.from, editorState));
+                    mcAnchors[i].push(this.charDistance(line.from, firstNote.from, sourceText));
                     cursorCopy = firstNote.cursor;
                 }
                 else {
-                    mcAnchors[i].push(this.charDistance(line.from, connector.from, editorState));
+                    mcAnchors[i].push(this.charDistance(line.from, connector.from, sourceText));
                 }
             } while (cursorCopy.nextSibling());
         }
@@ -432,8 +435,8 @@ class Measure extends ASTNode {
         }
         return result;
     }
-    charDistance(from, to, editorState) {
-        return editorState.doc.slice(from, to).toString().replace(/\s/g, '').length;
+    charDistance(from, to, sourceText) {
+        return sourceText.slice(from, to).toString().replace(/\s/g, '').length;
     }
 }
 class Sound extends ASTNode {
@@ -611,9 +614,9 @@ class LinearParser {
     /// The index of all the parsed content will be relative to this offset
     /// This is usually the index of the source TabFragment, to make 
     /// for efficient relocation of TabFragments
-    offset, editorState) {
+    offset, sourceText) {
         this.offset = offset;
-        this.editorState = editorState;
+        this.sourceText = sourceText;
         // TODO: you might want to change this later to a Uint16array with the following format:
         // [node1typeID, length, rangeLen, ranges..., node2typeID, ...]
         // To do this, you will have to modify the ASTNode.increaseLength() function to account 
@@ -639,7 +642,7 @@ class LinearParser {
         }
         this.nodeSet.push(content);
         this.ancestryStack.push(this.nodeSet.length - 1);
-        let children = content.parse(this.editorState);
+        let children = content.parse(this.sourceText);
         for (let ancestor of this.ancestryStack) {
             this.nodeSet[ancestor].increaseLength(children);
         }
@@ -660,7 +663,7 @@ class LinearParser {
             if (node.name !== Measure.name)
                 continue;
             for (let i = 1; i < node.ranges.length; i += 2) {
-                hasMeasureline = hasMeasureline || this.editorState.doc.slice(node.offset + node.ranges[i - 1], node.offset + node.ranges[i]).toString().replace(/\s/g, '').length !== 0;
+                hasMeasureline = hasMeasureline || this.sourceText.slice(node.offset + node.ranges[i - 1], node.offset + node.ranges[i]).toString().replace(/\s/g, '').length !== 0;
                 if (hasMeasureline)
                     break outer;
             }
@@ -682,6 +685,7 @@ class LPNode {
     }
 }
 
+// TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
 class TabFragment {
     constructor(from, to, rootNode, editorState, linearParser) {
         this.from = from;
@@ -696,15 +700,15 @@ class TabFragment {
         }
         if (rootNode.name !== TabFragment.AnchorNode)
             throw new Error("Incorrect node type used.");
-        this.linearParser = new LinearParser(rootNode, this.from, editorState);
+        this.linearParser = new LinearParser(rootNode, this.from, editorState.doc);
     }
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
     static get AnchorNode() { return SyntaxNodeTypes.TabSegment; }
     advance() {
         if (this.isBlankFragment)
-            return FragmentCursor.dud;
+            return ASTCursor.dud;
         let nodeSet = this.linearParser.advance();
-        return nodeSet ? (this.linearParser.isValid ? FragmentCursor.from(nodeSet) : FragmentCursor.dud) : null;
+        return nodeSet ? (this.linearParser.isValid ? ASTCursor.from(nodeSet) : ASTCursor.dud) : null;
     }
     /// starts parsing this TabFragment from the raw SyntaxNode. this is made to be 
     /// incremental to prevent blocking when there are a lot of Tab Blocks on the same line
@@ -769,7 +773,7 @@ class TabTree {
     }
     getFragments() { return this.fragments; }
     toString() {
-        let str = "Tree(";
+        let str = "TabTree(";
         for (let fragment of this.fragments) {
             str += fragment.toString();
         }
@@ -788,7 +792,7 @@ class TabTree {
     iterateHelper(spec, cursor) {
         let explore;
         do {
-            explore = spec.enter(cursor.name, cursor.ranges, () => cursor.node);
+            explore = spec.enter(cursor.node);
             if (explore === false)
                 continue;
             if (cursor.firstChild()) {
@@ -796,7 +800,7 @@ class TabTree {
                 cursor.parent();
             }
             if (spec.leave)
-                spec.leave(cursor.name, cursor.ranges, () => cursor.node);
+                spec.leave(cursor.node);
         } while (cursor.nextSibling());
     }
 }
@@ -1384,5 +1388,5 @@ class TabLanguageSupport {
     }
 }
 
-export { ASTNode, FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTCursor, ASTNode, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map

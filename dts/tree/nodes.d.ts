@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { Text } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
 import { AnchoredSyntaxCursor } from "./cursors";
 export declare enum SyntaxNodeTypes {
@@ -37,15 +37,15 @@ export declare abstract class ASTNode {
     };
     readonly offset: number;
     get isSingleSpanNode(): boolean;
-    ranges: Uint16Array;
+    readonly ranges: Uint16Array;
     constructor(sourceNodes: {
         [type: string]: SyntaxNode[];
     }, offset: number);
     get name(): string;
-    protected parsed: boolean;
+    private parsed;
     get isParsed(): boolean;
-    parse(editorState: EditorState): ASTNode[];
-    protected abstract createChildren(editorState: EditorState): ASTNode[];
+    parse(sourceText: Text): ASTNode[];
+    protected abstract createChildren(sourceText: Text): ASTNode[];
     protected disposeSourceNodes(): void;
     private _length;
     increaseLength(children: ASTNode[]): void;
@@ -56,14 +56,14 @@ export declare abstract class ASTNode {
 }
 export declare class TabSegment extends ASTNode implements SingleSpanNode {
     getRootNodeTraverser(): AnchoredSyntaxCursor;
-    protected createChildren(editorState: EditorState): TabBlock[];
+    protected createChildren(sourceText: Text): TabBlock[];
     private lineDistance;
 }
 export declare class TabBlock extends ASTNode {
     protected createChildren(): ASTNode[];
 }
 export declare class Measure extends ASTNode {
-    protected createChildren(editorState: EditorState): Sound[];
+    protected createChildren(sourceText: Text): Sound[];
     private charDistance;
 }
 export declare class Sound extends ASTNode {
