@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { EditorState, Text } from "@codemirror/state";
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { AnchoredSyntaxCursor } from "./cursors";
 
@@ -40,7 +40,7 @@ export interface SingleSpanNode {
 }
 export abstract class ASTNode {
     public get isSingleSpanNode() { return typeof (this as any).getRootNodeTraverser === "function" }
-    public ranges: Uint16Array;
+    readonly ranges: Uint16Array; // TODO: Does this really need to be Uint16Array? why not a normal array. memory benefit might be little to none
     constructor(
         /// mapping of SyntaxNode type => syntax nodes where the syntax nodes are the source
         /// nodes of the parse tree from which the ASTNode is being built.
@@ -52,14 +52,14 @@ export abstract class ASTNode {
     }
     get name() { return this.constructor.name; }
     // parse up-keep
-    protected parsed = false;
+    private parsed = false;
     get isParsed() { return this.parsed }
-    public parse(editorState: EditorState): ASTNode[] {
+    public parse(sourceText: Text): ASTNode[] {
         if (this.parsed) return [];
         this.parsed = true;
-        return this.createChildren(editorState);
+        return this.createChildren(sourceText);
     }
-    protected abstract createChildren(editorState: EditorState): ASTNode[];
+    protected abstract createChildren(sourceText: Text): ASTNode[];
     
     protected disposeSourceNodes() {
         // TODO: consider if we should preserve sourceNodes
@@ -89,7 +89,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
     public getRootNodeTraverser(): AnchoredSyntaxCursor {
         return new AnchoredSyntaxCursor(this.sourceNodes[SyntaxNodeTypes.TabSegment][0], this.offset);
     }
-    protected createChildren(editorState: EditorState): TabBlock[] {
+    protected createChildren(sourceText: Text): TabBlock[] {
         let modifiers = this.sourceNodes[SyntaxNodeTypes.TabSegment][0].getChildren(SyntaxNodeTypes.Modifier);
 
         let strings:SyntaxNode[][] = [];
@@ -111,7 +111,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
                 if (stringLine.length===0) continue;
                 
                 string = stringLine.pop()!;
-                let stringRange = {from: this.lineDistance(string.from, editorState), to: this.lineDistance(string.to, editorState)};
+                let stringRange = {from: this.lineDistance(string.from, sourceText), to: this.lineDistance(string.to, sourceText)};
                 isStringPlaced = false;
                 for (bI=firstUncompletedBlockIdx; bI<blockAnchors.length; bI++) {
                     anchor = blockAnchors[bI];
@@ -151,7 +151,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
         let modifierRange: {from: number, to: number};
         bI = 0;
         for (let modifier of modifiers) {
-            modifierRange = {from: this.lineDistance(modifier.from, editorState), to: this.lineDistance(modifier.to, editorState)}
+            modifierRange = {from: this.lineDistance(modifier.from, sourceText), to: this.lineDistance(modifier.to, sourceText)}
             anchor = blockAnchors[bI];
             if (!blockModifiers[bI]) blockModifiers.push([]);
             while (anchor && anchor.to <= modifierRange.from) {
@@ -180,8 +180,8 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
         return tabBlocks;
     }
 
-    private lineDistance(idx: number, editorState: EditorState) {
-        return idx - editorState.doc.lineAt(idx).from;
+    private lineDistance(idx: number, sourceText: Text) {
+        return idx - sourceText.lineAt(idx).from;
     }
 }
 
@@ -222,7 +222,7 @@ export class TabBlock extends ASTNode {
 }
 
 export class Measure extends ASTNode {
-    protected createChildren(editorState: EditorState): Sound[] {
+    protected createChildren(sourceText: Text): Sound[] {
         let lines = this.sourceNodes[SyntaxNodeTypes.MeasureLine];
         let measureComponentsByLine: SyntaxNode[][] = [];
         let mcAnchors: number[][] = [];
@@ -238,8 +238,8 @@ export class Measure extends ASTNode {
                 if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
                     measureComponentsByLine[i].push(cursorCopy.node);
                     if (cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
-                        mcAnchors[i].push(this.charDistance(line.from, (cursorCopy.node.getChild(SyntaxNodeTypes.Note)?.from || cursorCopy.from), editorState));
-                    } else mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, editorState));
+                        mcAnchors[i].push(this.charDistance(line.from, (cursorCopy.node.getChild(SyntaxNodeTypes.Note)?.from || cursorCopy.from), sourceText));
+                    } else mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, sourceText));
                     if (connectorRecursionRoot!=null) {
                         cursorCopy = connectorRecursionRoot;
                         connectorRecursionRoot = null;
@@ -252,10 +252,10 @@ export class Measure extends ASTNode {
                 let connector = cursorCopy.node;
                 let firstNote = connector.getChild(SyntaxNodeTypes.Note) || connector.getChild(SyntaxNodeTypes.NoteDecorator);
                 if (firstNote) {
-                    mcAnchors[i].push(this.charDistance(line.from, firstNote.from, editorState));
+                    mcAnchors[i].push(this.charDistance(line.from, firstNote.from, sourceText));
                     cursorCopy = firstNote.cursor;
                 } else {
-                    mcAnchors[i].push(this.charDistance(line.from, connector.from, editorState));
+                    mcAnchors[i].push(this.charDistance(line.from, connector.from, sourceText));
                 }
             } while (cursorCopy.nextSibling());
         }
@@ -314,8 +314,8 @@ export class Measure extends ASTNode {
         return result;
     }
 
-    private charDistance(from: number, to: number, editorState: EditorState) {
-        return editorState.doc.slice(from, to).toString().replace(/\s/g, '').length;
+    private charDistance(from: number, to: number, sourceText: Text) {
+        return sourceText.slice(from, to).toString().replace(/\s/g, '').length;
     }
 }
 

@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { EditorState, Text } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
 import { ASTNode, Measure, TabSegment } from "../tree/nodes";
 import { TabFragment } from "../tree/tab_fragment";
@@ -24,7 +24,7 @@ export class LinearParser {
         /// This is usually the index of the source TabFragment, to make 
         /// for efficient relocation of TabFragments
         readonly offset: number,
-        private editorState: EditorState
+        private sourceText: Text
     ) {
         if (initialNode.name!==TabFragment.AnchorNode) throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
         let initialContent = [new TabSegment({[TabFragment.AnchorNode]: [initialNode]}, offset)]
@@ -43,7 +43,7 @@ export class LinearParser {
 
         this.nodeSet.push(content);
         this.ancestryStack.push(this.nodeSet.length-1);
-        let children = content.parse(this.editorState);
+        let children = content.parse(this.sourceText);
         for (let ancestor of this.ancestryStack) {
             this.nodeSet[ancestor].increaseLength(children);
         }
@@ -62,7 +62,7 @@ export class LinearParser {
         outer: for (let node of nodeSet) {
             if (node.name!==Measure.name) continue;
             for (let i=1; i<node.ranges.length; i+=2) {
-                hasMeasureline = hasMeasureline || this.editorState.doc.slice(node.offset+node.ranges[i-1], node.offset+node.ranges[i]).toString().replace(/\s/g, '').length !== 0
+                hasMeasureline = hasMeasureline || this.sourceText.slice(node.offset+node.ranges[i-1], node.offset+node.ranges[i]).toString().replace(/\s/g, '').length !== 0
                 if (hasMeasureline) break outer;
             }
         }

@@ -2,8 +2,10 @@
 import { EditorState } from "@codemirror/state";
 import { ASTNode, SyntaxNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
-import { FragmentCursor } from "./cursors";
+import { ASTCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
+
+// TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
 
 export class TabFragment {
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
@@ -23,13 +25,13 @@ export class TabFragment {
             return;
         }
         if (rootNode.name!==TabFragment.AnchorNode) throw new Error("Incorrect node type used.");
-        this.linearParser = new LinearParser(rootNode, this.from, editorState);
+        this.linearParser = new LinearParser(rootNode, this.from, editorState.doc);
     }
 
-    advance(): FragmentCursor | null {
-        if (this.isBlankFragment) return FragmentCursor.dud;
+    advance(): ASTCursor | null {
+        if (this.isBlankFragment) return ASTCursor.dud;
         let nodeSet = this.linearParser!.advance();
-        return nodeSet ? (this.linearParser!.isValid ? FragmentCursor.from(nodeSet) : FragmentCursor.dud) : null;
+        return nodeSet ? (this.linearParser!.isValid ? ASTCursor.from(nodeSet) : ASTCursor.dud) : null;
     }
 
     
@@ -88,21 +90,10 @@ export class TabFragment {
 
 type IteratorSpec = {
     enter: (
-        // TODO: we might want to make a TabNodeType
-        // instead of just using a string. whether
-        // this should be a class or an enum for 
-        // good design, i am not sure. class might 
-        // be helpful if we are going to store 
-        // ASTNodes as an array of numbers, that way, 
-        // we can just get the id of the type from TabNodeType.id
-        type: string,
-        ranges: number[],
-        get: () => Readonly<ASTNode>
+        node: Readonly<ASTNode>
     ) => false | undefined,
     leave?: (
-        type: string,
-        ranges: number[],
-        get: () => Readonly<ASTNode>
+        node: Readonly<ASTNode>
     ) => void,
     from?: number,
     to?: number
@@ -116,13 +107,13 @@ export class TabTree {
         this.to = fragments[fragments.length-1] ? fragments[fragments.length-1].to : 0;
     }
 
-    static createBlankTree(from: number, to:  number) {
+    static createBlankTree(from: number, to: number) {
         return new TabTree([TabFragment.createBlankFragment(from, to)]);
     }
 
     getFragments() { return this.fragments }
     toString() {
-        let str = "Tree("
+        let str = "TabTree("
         for (let fragment of this.fragments) {
             str += fragment.toString();
         }
@@ -136,20 +127,20 @@ export class TabTree {
     /// node will not have its children iterated over (or leave called).
     iterate(spec: IteratorSpec) {
         for (let frag of this.fragments) {
-            this.iterateHelper(spec, frag.cursor!);
+            this.iterateHelper(spec, frag.cursor);
         }
     }
 
-    private iterateHelper(spec: IteratorSpec, cursor: FragmentCursor) {
+    private iterateHelper(spec: IteratorSpec, cursor: ASTCursor) {
         let explore: boolean | undefined;
         do {
-            explore = spec.enter(cursor.name, cursor.ranges, () => cursor.node);
+            explore = spec.enter(cursor.node);
             if (explore===false) continue;
             if (cursor.firstChild()) {
                 this.iterateHelper(spec, cursor);
                 cursor.parent();
             }
-            if (spec.leave) spec.leave(cursor.name, cursor.ranges, () => cursor.node);
+            if (spec.leave) spec.leave(cursor.node);
         }while (cursor.nextSibling());
     }
 

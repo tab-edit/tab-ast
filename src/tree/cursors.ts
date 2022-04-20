@@ -2,26 +2,27 @@ import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { ASTNode, SingleSpanNode } from "./nodes";
 import { TabFragment } from "./tab_fragment";
 
-interface Cursor {
+interface Cursor<T> {
     name: string;
-    node: Readonly<ASTNode> | Readonly<OffsetSyntaxNode>;
+    node: Readonly<T>;
     firstChild(): boolean;
     lastChild(): boolean;
     parent(): boolean;
     prevSibling(): boolean;
     nextSibling(): boolean;
+    fork(): Cursor<T>;
 }
 
-export class FragmentCursor implements Cursor {
+export class ASTCursor implements Cursor<ASTNode> {
     private constructor(
         // might want to change this to an array of numbers.
         private nodeSet: ASTNode[],
         private pointer: number = 0,
         private ancestryTrace: number[] = []
     ) {}
-    public static from(nodeSet: ASTNode[]) {
+    public static from(nodeSet: ASTNode[], startingPos?: number) {
         if (!nodeSet || !nodeSet.length) return null;
-        return new FragmentCursor(nodeSet, 0, []);
+        return new ASTCursor(nodeSet, startingPos || 0, []);
     }
 
     get name() { return this.nodeSet[this.pointer].name }
@@ -76,11 +77,12 @@ export class FragmentCursor implements Cursor {
         this.pointer = nextInorder;
         return true;
     }
+
     fork() {
-        return new FragmentCursor(this.nodeSet, this.pointer, this.ancestryTrace);
+        return new ASTCursor(this.nodeSet, this.pointer, this.ancestryTrace);
     }
 
-    static readonly dud =  new FragmentCursor([]);
+    static readonly dud =  new ASTCursor([]);
 
     printTree() {
         let str = this.printTreeRecursiveHelper();
@@ -110,7 +112,7 @@ export class FragmentCursor implements Cursor {
 // be able to access and traverse the raw syntax nodes while 
 // still maintaining the fact that all nodes' positions are 
 // relative to the TabFragment in which they are contained.
-export class AnchoredSyntaxCursor implements Cursor {
+export class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
     private cursor: TreeCursor;
     constructor(
         startingNode: SyntaxNode,
@@ -145,6 +147,9 @@ export class AnchoredSyntaxCursor implements Cursor {
     prevSibling() {
         if (this.name===TabFragment.AnchorNode) return false;
         return this.cursor.nextSibling();
+    }
+    fork() {
+        return new AnchoredSyntaxCursor(this.cursor.node, this.anchorOffset);
     }
 }
 

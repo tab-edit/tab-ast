@@ -1,6 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { parser } from "parser-tablature";
-import { FragmentCursor } from "./tree/cursors";
+import { ASTCursor } from "./tree/cursors";
 import { TabFragment } from "./tree/tab_fragment";
 
 let str = `
@@ -29,7 +29,7 @@ let x = tree.cursor();
 x.firstChild();
 x.nextSibling();
 let tabFragment = TabFragment.startParse(x.node, editorState);
-let cursor: FragmentCursor;
+let cursor: ASTCursor;
 let i = 0;
 while (!(cursor = tabFragment.advance())) { 
     i++;
