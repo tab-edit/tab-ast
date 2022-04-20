@@ -598,7 +598,7 @@ class Multiplier extends Modifier {
     getType() { return SyntaxNodeTypes.Multiplier; }
 }
 
-/// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked list structure
+/// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked-list-like structure
 // the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
 // init:      [_rootNode_]
 // advance(): [rootNode, _rootNodeChild1, rootNodeChild2, rootNodeChild3..._]
@@ -616,7 +616,8 @@ class LinearParser {
         // TODO: you might want to change this later to a Uint16array with the following format:
         // [node1typeID, length, rangeLen, ranges..., node2typeID, ...]
         // To do this, you will have to modify the ASTNode.increaseLength() function to account 
-        // for the fact that different nodes can have different ranges
+        // for the fact that different nodes can have different ranges.
+        // not sure if better or worse for time/memory efficiency
         this.nodeSet = [];
         this.head = null;
         this.ancestryStack = [];
@@ -889,8 +890,17 @@ class PartialTabParseImplement {
         }
         if (skipTo) {
             skipTo = (cursor.from == cursor.to) ? skipTo + 1 : skipTo; // for zero-width error nodes, prevent being stuck in loop.
-            let frag = TabFragment.createBlankFragment(this.parsedPos, skipTo);
-            this.fragments.push(frag);
+            let prevFrag = this.fragments[this.fragments.length - 1];
+            let blankFrag;
+            if (prevFrag.isBlankFragment) {
+                // combine consecutive blank fragments into one.
+                blankFrag = TabFragment.createBlankFragment(prevFrag.from, skipTo);
+                this.fragments[this.fragments.length - 1] = blankFrag;
+            }
+            else {
+                blankFrag = TabFragment.createBlankFragment(this.parsedPos, skipTo);
+                this.fragments.push(blankFrag);
+            }
             this.parsedPos = skipTo;
             return { blocked: false, tree: null };
         }
@@ -1373,5 +1383,5 @@ class TabLanguageSupport {
     }
 }
 
-export { FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTNode, FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map

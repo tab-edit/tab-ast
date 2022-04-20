@@ -111,3 +111,4 @@ export declare class TabLanguageSupport {
 }
 export { TabTree } from './tree/tab_fragment';
 export { FragmentCursor } from './tree/cursors';
+export { ASTNode } from './tree/nodes';
