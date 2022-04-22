@@ -122,7 +122,7 @@ class ASTCursor {
     printTreeRecursiveHelper() {
         if (this.nodeSet.length == 0)
             return "";
-        let str = `${this.nodeSet[this.pointer].name}`;
+        let str = `${this.nodeSet[this.pointer].name}[${this.nodeSet[this.pointer].ranges.toString()}]`;
         if (this.firstChild())
             str += "(";
         else
