@@ -348,7 +348,7 @@ class LineNaming extends ASTNode {
 
 export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
     abstract getType(): string;
-    private notes: SyntaxNode[] = [];
+    private notes: SyntaxNode[];
 
     public getRootNodeTraverser(): AnchoredSyntaxCursor {
         return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);

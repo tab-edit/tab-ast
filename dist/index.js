@@ -511,10 +511,6 @@ class LineNaming extends ASTNode {
     }
 }
 class NoteConnector extends ASTNode {
-    constructor() {
-        super(...arguments);
-        this.notes = [];
-    }
     getRootNodeTraverser() {
         return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
     }
