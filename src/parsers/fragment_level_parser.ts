@@ -146,7 +146,7 @@ export class PartialTabParseImplement implements PartialTabParse {
             skipTo = (cursor.from==cursor.to) ? skipTo+1 : skipTo; // for zero-width error nodes, prevent being stuck in loop.
             let prevFrag = this.fragments[this.fragments.length-1];
             let blankFrag:TabFragment;
-            if (prevFrag.isBlankFragment) {
+            if (prevFrag && prevFrag.isBlankFragment) {
                 // combine consecutive blank fragments into one.
                 blankFrag = TabFragment.createBlankFragment(prevFrag.from, skipTo);;
                 this.fragments[this.fragments.length-1] = blankFrag;
