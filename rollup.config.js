@@ -9,7 +9,7 @@ export default [
             file: 'dist/index.js',
             format: 'es'
         },
-        plugins: [typescript()]
+        plugins: [typescript({ tsconfig: "./tsconfig.json" })]
     },
     {
         input: 'dts/index.d.ts',
