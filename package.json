@@ -49,8 +49,8 @@
   },
   "dependencies": {
     "@codemirror/language": "^0.19.7",
-    "@codemirror/state": "^0.19.6",
-    "@codemirror/view": "^0.19.40",
+    "@codemirror/state": "^0.20.0",
+    "@codemirror/view": "^0.20.3",
     "@lezer/common": "^0.15.11",
     "@lezer/lr": "^0.15.7",
     "parser-tablature": "github:tab-edit/parser-tablature"
