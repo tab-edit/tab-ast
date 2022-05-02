@@ -230,9 +230,9 @@ export class Measure extends ASTNode {
             let line = lines[i];
             measureComponentsByLine[i] = [];
             mcAnchors[i] = [];
-            let cursor = line.cursor;
+            let cursor = line.cursor();
             if (!cursor.firstChild()) continue;
-            let cursorCopy = cursor.node.cursor;
+            let cursorCopy = cursor.node.cursor();
             let connectorRecursionRoot: TreeCursor | null = null;
             do {
                 if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
@@ -247,13 +247,13 @@ export class Measure extends ASTNode {
                     continue;
                 }
                 if (!cursorCopy.node.type.is(SyntaxNodeTypes.NoteConnector)) break;
-                if (!connectorRecursionRoot) connectorRecursionRoot = cursorCopy.node.cursor;
+                if (!connectorRecursionRoot) connectorRecursionRoot = cursorCopy.node.cursor();
                 measureComponentsByLine[i].push(cursorCopy.node);
                 let connector = cursorCopy.node;
                 let firstNote = connector.getChild(SyntaxNodeTypes.Note) || connector.getChild(SyntaxNodeTypes.NoteDecorator);
                 if (firstNote) {
                     mcAnchors[i].push(this.charDistance(line.from, firstNote.from, sourceText));
-                    cursorCopy = firstNote.cursor;
+                    cursorCopy = firstNote.cursor();
                 } else {
                     mcAnchors[i].push(this.charDistance(line.from, connector.from, sourceText));
                 }
@@ -376,14 +376,14 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
 
     private getNotesFromNoteConnector(connector: SyntaxNode) {
         let notes:SyntaxNode[] = [];
-        let cursor = connector.cursor;
+        let cursor = connector.cursor();
         let nestedConnectorExit: SyntaxNode | null = null;
         if (!cursor.firstChild()) return [];
         do {
             if (cursor.type.is(SyntaxNodeTypes.Note) || cursor.type.is(SyntaxNodeTypes.NoteDecorator)) {
                 notes.push(cursor.node);
                 if (nestedConnectorExit) {
-                    cursor = nestedConnectorExit.cursor;
+                    cursor = nestedConnectorExit.cursor();
                     nestedConnectorExit = null;
                 }
             } else if (cursor.type.is(SyntaxNodeTypes.NoteConnector)) {

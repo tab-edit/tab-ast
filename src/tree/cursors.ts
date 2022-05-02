@@ -162,7 +162,7 @@ export class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
         startingNode: SyntaxNode,
         private anchorOffset: number,
     ) {
-        this.cursor = startingNode.cursor;
+        this.cursor = startingNode.cursor();
     }
     
     get type() { return this.cursor.type }
@@ -174,11 +174,9 @@ export class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
     lastChild() { return this.cursor.lastChild() }
     enter(
         pos: number,
-        side: -1 | 0 | 1,
-        overlays: boolean = true,
-        buffers: boolean = true
+        side: -1 | 0 | 1
     ) {
-        return this.cursor.enter(pos, side, overlays, buffers);
+        return this.cursor.enter(pos, side);
     }
     parent() {
         if (this.name===TabFragment.AnchorNode) return false;

@@ -64,7 +64,7 @@ declare class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
     get node(): Readonly<OffsetSyntaxNode>;
     firstChild(): boolean;
     lastChild(): boolean;
-    enter(pos: number, side: -1 | 0 | 1, overlays?: boolean, buffers?: boolean): boolean;
+    enter(pos: number, side: -1 | 0 | 1): boolean;
     parent(): boolean;
     nextSibling(): boolean;
     prevSibling(): boolean;

@@ -147,7 +147,7 @@ ASTCursor.dud = new ASTCursor([]);
 class AnchoredSyntaxCursor {
     constructor(startingNode, anchorOffset) {
         this.anchorOffset = anchorOffset;
-        this.cursor = startingNode.cursor;
+        this.cursor = startingNode.cursor();
     }
     get type() { return this.cursor.type; }
     get name() { return this.cursor.name; }
@@ -156,8 +156,8 @@ class AnchoredSyntaxCursor {
     get node() { return Object.freeze(new OffsetSyntaxNode(this.cursor.node, this.anchorOffset)); }
     firstChild() { return this.cursor.firstChild(); }
     lastChild() { return this.cursor.lastChild(); }
-    enter(pos, side, overlays = true, buffers = true) {
-        return this.cursor.enter(pos, side, overlays, buffers);
+    enter(pos, side) {
+        return this.cursor.enter(pos, side);
     }
     parent() {
         if (this.name === TabFragment.AnchorNode)
@@ -393,10 +393,10 @@ class Measure extends ASTNode {
             let line = lines[i];
             measureComponentsByLine[i] = [];
             mcAnchors[i] = [];
-            let cursor = line.cursor;
+            let cursor = line.cursor();
             if (!cursor.firstChild())
                 continue;
-            let cursorCopy = cursor.node.cursor;
+            let cursorCopy = cursor.node.cursor();
             let connectorRecursionRoot = null;
             do {
                 if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
@@ -415,13 +415,13 @@ class Measure extends ASTNode {
                 if (!cursorCopy.node.type.is(SyntaxNodeTypes.NoteConnector))
                     break;
                 if (!connectorRecursionRoot)
-                    connectorRecursionRoot = cursorCopy.node.cursor;
+                    connectorRecursionRoot = cursorCopy.node.cursor();
                 measureComponentsByLine[i].push(cursorCopy.node);
                 let connector = cursorCopy.node;
                 let firstNote = connector.getChild(SyntaxNodeTypes.Note) || connector.getChild(SyntaxNodeTypes.NoteDecorator);
                 if (firstNote) {
                     mcAnchors[i].push(this.charDistance(line.from, firstNote.from, sourceText));
-                    cursorCopy = firstNote.cursor;
+                    cursorCopy = firstNote.cursor();
                 }
                 else {
                     mcAnchors[i].push(this.charDistance(line.from, connector.from, sourceText));
@@ -537,7 +537,7 @@ class NoteConnector extends ASTNode {
     }
     getNotesFromNoteConnector(connector) {
         let notes = [];
-        let cursor = connector.cursor;
+        let cursor = connector.cursor();
         let nestedConnectorExit = null;
         if (!cursor.firstChild())
             return [];
@@ -545,7 +545,7 @@ class NoteConnector extends ASTNode {
             if (cursor.type.is(SyntaxNodeTypes.Note) || cursor.type.is(SyntaxNodeTypes.NoteDecorator)) {
                 notes.push(cursor.node);
                 if (nestedConnectorExit) {
-                    cursor = nestedConnectorExit.cursor;
+                    cursor = nestedConnectorExit.cursor();
                     nestedConnectorExit = null;
                 }
             }
