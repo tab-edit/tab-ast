@@ -1,4 +1,4 @@
-import { EditorState, Text } from "@codemirror/state";
+import { Text } from "@codemirror/state";
 import { SyntaxNode } from "@lezer/common";
 import { ASTNode, Measure, TabSegment } from "../tree/nodes";
 import { TabFragment } from "../tree/tab_fragment";

@@ -1,8 +1,6 @@
 // TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
 import { ensureSyntaxTree, Language, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { SyntaxNode } from "@lezer/common";
-import { SyntaxNodeTypes } from "../tree/nodes";
 import { TabFragment, TabTree } from "../tree/tab_fragment";
 class Range {
     constructor(readonly from: number, readonly to: number) {}
