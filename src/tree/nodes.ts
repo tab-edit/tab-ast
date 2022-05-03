@@ -461,8 +461,8 @@ abstract class Modifier extends ASTNode  implements SingleSpanNode {
             case SyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
             case SyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
             case SyntaxNodeTypes.Multiplier: return new Multiplier(sourceNodes, offset);
+            default: return null;
         }
-        return null!;
     }
 }
 class Repeat extends Modifier { getType() { return SyntaxNodeTypes.Repeat } }
