@@ -1,5 +1,5 @@
 // TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
-import { ensureSyntaxTree, Language, syntaxTree, syntaxTreeAvailable } from "@codemirror/language";
+import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { TabFragment, TabTree } from "../tree/tab_fragment";
 class Range {

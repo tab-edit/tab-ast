@@ -1,7 +1,5 @@
 import { Text } from "@codemirror/state";
-import { SyntaxNode } from "@lezer/common";
-import { ASTNode, Measure, TabSegment } from "../tree/nodes";
-import { TabFragment } from "../tree/tab_fragment";
+import { ASTNode, Measure } from "../tree/nodes";
 
 /// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked-list-like structure
 // the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
@@ -19,16 +17,13 @@ export class LinearParser {
     private nodeSet: ASTNode[] = [];
     private head: LPNode | null = null;
     constructor(
-        initialNode: SyntaxNode,
+        initialNode: ASTNode,
         /// The index of all the parsed content will be relative to this offset
         /// This is usually the index of the source TabFragment, to make 
         /// for efficient relocation of TabFragments
-        readonly offset: number,
         private sourceText: Text
     ) {
-        if (initialNode.name!==TabFragment.AnchorNode) throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
-        let initialContent = [new TabSegment({[TabFragment.AnchorNode]: [initialNode]}, offset)]
-        this.head = new LPNode(initialContent, null);
+        this.head = new LPNode([initialNode], null);
     }
 
     private ancestryStack: number[] = [];

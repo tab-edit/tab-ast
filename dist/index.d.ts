@@ -132,11 +132,10 @@ declare abstract class ASTNode {
 }
 
 declare class LinearParser {
-    readonly offset: number;
     private sourceText;
     private nodeSet;
     private head;
-    constructor(initialNode: SyntaxNode, offset: number, sourceText: Text);
+    constructor(initialNode: ASTNode, sourceText: Text);
     private ancestryStack;
     advance(): ASTNode[] | null;
     get isDone(): boolean;

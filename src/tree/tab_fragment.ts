@@ -1,6 +1,6 @@
 // TODO: credit https://github.com/lezer-parser/common/blob/main/src/parse.ts
 import { EditorState } from "@codemirror/state";
-import { ASTNode, SyntaxNodeTypes } from "./nodes";
+import { ASTNode, SyntaxNodeTypes, TabSegment } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { ASTCursor, FragmentCursor } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
@@ -24,8 +24,9 @@ export class TabFragment {
             this.isBlankFragment = true;
             return;
         }
-        if (rootNode.name!==TabFragment.AnchorNode) throw new Error("Incorrect node type used.");
-        this.linearParser = new LinearParser(rootNode, this.from, editorState.doc);
+        if (rootNode.name!==TabFragment.AnchorNode) throw new Error(`Expected ${TabFragment.AnchorNode} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
+        let initialContent = new TabSegment({[TabFragment.AnchorNode]: [rootNode]}, this.from);
+        this.linearParser = new LinearParser(initialContent, editorState.doc);
     }
 
     advance(): ASTCursor | null {

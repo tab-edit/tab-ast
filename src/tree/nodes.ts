@@ -1,4 +1,4 @@
-import { EditorState, Text } from "@codemirror/state";
+import { Text } from "@codemirror/state";
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { AnchoredSyntaxCursor } from "./cursors";
 
@@ -404,7 +404,7 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
             case SyntaxNodeTypes.Pull: return new Pull(sourceNodes, offset);
             case SyntaxNodeTypes.Slide: return new Slide(sourceNodes, offset);
         }
-        return null!;
+        throw new Error(`Invalid NoteConnector type "${type}"`);
     }
 }
 export class Hammer extends NoteConnector { getType() { return SyntaxNodeTypes.Hammer } }
@@ -426,7 +426,7 @@ export abstract class NoteDecorator extends ASTNode implements SingleSpanNode {
             case SyntaxNodeTypes.Grace: return new Grace(sourceNodes, offset);
             case SyntaxNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
         }
-        return null!;
+        throw new Error(`Invalid NoteDecorator type "${type}"`);
     }
 }
 export class Grace extends NoteDecorator { getType() { return SyntaxNodeTypes.Grace } }
@@ -442,7 +442,7 @@ export abstract class Note extends ASTNode  implements SingleSpanNode {
         switch(type) {
             case SyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
         }
-        return null!;
+        throw new Error(`Invalid Note type "${type}"`);
     }
 }
 export class Fret extends Note { getType(): string { return SyntaxNodeTypes.Fret } }
@@ -461,8 +461,8 @@ abstract class Modifier extends ASTNode  implements SingleSpanNode {
             case SyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
             case SyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
             case SyntaxNodeTypes.Multiplier: return new Multiplier(sourceNodes, offset);
-            default: return null;
         }
+        throw new Error(`Invalid Modifier type "${type}"`);
     }
 }
 class Repeat extends Modifier { getType() { return SyntaxNodeTypes.Repeat } }

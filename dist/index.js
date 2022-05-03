@@ -564,7 +564,7 @@ class NoteConnector extends ASTNode {
             case SyntaxNodeTypes.Pull: return new Pull(sourceNodes, offset);
             case SyntaxNodeTypes.Slide: return new Slide(sourceNodes, offset);
         }
-        return null;
+        throw new Error(`Invalid NoteConnector type "${type}"`);
     }
 }
 class Hammer extends NoteConnector {
@@ -591,7 +591,7 @@ class NoteDecorator extends ASTNode {
             case SyntaxNodeTypes.Grace: return new Grace(sourceNodes, offset);
             case SyntaxNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
         }
-        return null;
+        throw new Error(`Invalid NoteDecorator type "${type}"`);
     }
 }
 class Grace extends NoteDecorator {
@@ -609,7 +609,7 @@ class Note extends ASTNode {
         switch (type) {
             case SyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
         }
-        return null;
+        throw new Error(`Invalid Note type "${type}"`);
     }
 }
 class Fret extends Note {
@@ -628,8 +628,8 @@ class Modifier extends ASTNode {
             case SyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
             case SyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
             case SyntaxNodeTypes.Multiplier: return new Multiplier(sourceNodes, offset);
-            default: return null;
         }
+        throw new Error(`Invalid Modifier type "${type}"`);
     }
 }
 class Repeat extends Modifier {
@@ -654,8 +654,7 @@ class LinearParser {
     /// The index of all the parsed content will be relative to this offset
     /// This is usually the index of the source TabFragment, to make 
     /// for efficient relocation of TabFragments
-    offset, sourceText) {
-        this.offset = offset;
+    sourceText) {
         this.sourceText = sourceText;
         // TODO: you might want to change this later to a Uint16array with the following format:
         // [node1typeID, length, rangeLen, ranges..., node2typeID, ...]
@@ -666,10 +665,7 @@ class LinearParser {
         this.head = null;
         this.ancestryStack = [];
         this.cachedIsValid = null;
-        if (initialNode.name !== TabFragment.AnchorNode)
-            throw new Error("Parsing starting from a node other than the TabFragment's anchor node is not supported at this time.");
-        let initialContent = [new TabSegment({ [TabFragment.AnchorNode]: [initialNode] }, offset)];
-        this.head = new LPNode(initialContent, null);
+        this.head = new LPNode([initialNode], null);
     }
     advance() {
         if (!this.head)
@@ -739,8 +735,9 @@ class TabFragment {
             return;
         }
         if (rootNode.name !== TabFragment.AnchorNode)
-            throw new Error("Incorrect node type used.");
-        this.linearParser = new LinearParser(rootNode, this.from, editorState.doc);
+            throw new Error(`Expected ${TabFragment.AnchorNode} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
+        let initialContent = new TabSegment({ [TabFragment.AnchorNode]: [rootNode] }, this.from);
+        this.linearParser = new LinearParser(initialContent, editorState.doc);
     }
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
     static get AnchorNode() { return SyntaxNodeTypes.TabSegment; }
