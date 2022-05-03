@@ -23,14 +23,10 @@
     "url": "git+https://github.com/Stan15/tab-ast.git"
   },
   "keywords": [
-    "abstract syntax tree",
-    "parsing",
+    "parser",
     "music",
     "tabs",
     "guitar",
-    "tablature",
-    "drum",
-    "bass"
   ],
   "author": "Stanley Ihesiulo",
   "license": "ISC",
