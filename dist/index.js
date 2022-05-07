@@ -828,9 +828,10 @@ class TabTree {
         this.iterateHelper(spec, this.cursor);
     }
     iterateHelper(spec, cursor) {
+        const getCursor = () => cursor.fork(); // watch out, may be a source of memory leak if bad actor uses setInterval for example in their enter() or leave() function
         let explore;
         do {
-            explore = spec.enter(cursor.node) === false ? false : true;
+            explore = spec.enter(cursor.node, getCursor) === false ? false : true;
             if (explore === false)
                 continue;
             if (cursor.firstChild()) {
@@ -838,7 +839,7 @@ class TabTree {
                 cursor.parent();
             }
             if (spec.leave)
-                spec.leave(cursor.node);
+                spec.leave(cursor.node, getCursor);
         } while (cursor.nextSibling());
     }
 }

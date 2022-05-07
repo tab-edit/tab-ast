@@ -161,8 +161,8 @@ declare class TabFragment {
     get isParsed(): boolean;
 }
 declare type IteratorSpec = {
-    enter: (node: Readonly<ASTNode>) => false | void;
-    leave?: (node: Readonly<ASTNode>) => void;
+    enter: (node: Readonly<ASTNode>, getCursor?: () => FragmentCursor) => false | void;
+    leave?: (node: Readonly<ASTNode>, getCursor?: () => FragmentCursor) => void;
     from?: number;
     to?: number;
 };

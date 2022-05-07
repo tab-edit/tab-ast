@@ -91,10 +91,12 @@ export class TabFragment {
 
 type IteratorSpec = {
     enter: (
-        node: Readonly<ASTNode>
+        node: Readonly<ASTNode>,
+        getCursor?: () => FragmentCursor
     ) => false | void,
     leave?: (
-        node: Readonly<ASTNode>
+        node: Readonly<ASTNode>,
+        getCursor?: () => FragmentCursor
     ) => void,
     from?: number,
     to?: number
@@ -135,15 +137,16 @@ export class TabTree {
     }
 
     private iterateHelper(spec: IteratorSpec, cursor: FragmentCursor) {
+        const getCursor = () => cursor.fork(); // watch out, may be a source of memory leak if bad actor uses setInterval for example in their enter() or leave() function
         let explore: boolean | undefined;
         do {
-            explore = spec.enter(cursor.node)===false ? false : true;
+            explore = spec.enter(cursor.node, getCursor)===false ? false : true;
             if (explore===false) continue;
             if (cursor.firstChild()) {
                 this.iterateHelper(spec, cursor);
                 cursor.parent();
             }
-            if (spec.leave) spec.leave(cursor.node);
+            if (spec.leave) spec.leave(cursor.node, getCursor);
         }while (cursor.nextSibling());
     }
 
