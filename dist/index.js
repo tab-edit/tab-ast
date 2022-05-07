@@ -58,7 +58,7 @@ class ASTCursor {
     }
     get name() { return this.nodeSet[this.pointer].name; }
     get ranges() { return Array.from(this.nodeSet[this.pointer].ranges); }
-    get node() { return Object.freeze(this.nodeSet[this.pointer]); }
+    get node() { return this.nodeSet[this.pointer]; }
     sourceSyntaxNode() { var _a; return ((_a = this.nodeSet[this.pointer]) === null || _a === void 0 ? void 0 : _a.getRootNodeTraverser()) || null; }
     getAncestors() {
         return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));

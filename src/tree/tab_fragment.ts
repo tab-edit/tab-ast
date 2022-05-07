@@ -91,11 +91,11 @@ export class TabFragment {
 
 type IteratorSpec = {
     enter: (
-        node: Readonly<ASTNode>,
+        node: ASTNode,
         getCursor: () => FragmentCursor
     ) => false | void,
     leave?: (
-        node: Readonly<ASTNode>,
+        node: ASTNode,
         getCursor: () => FragmentCursor
     ) => void,
     from?: number,

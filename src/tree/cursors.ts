@@ -67,7 +67,7 @@ export class ASTCursor implements Cursor<ASTNode> {
 
     get name() { return this.nodeSet[this.pointer].name }
     get ranges() { return Array.from(this.nodeSet[this.pointer].ranges) }
-    get node() { return Object.freeze(this.nodeSet[this.pointer]) }
+    get node() { return this.nodeSet[this.pointer] }
     sourceSyntaxNode() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
 
     getAncestors() {

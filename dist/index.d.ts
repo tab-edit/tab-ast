@@ -22,7 +22,7 @@ declare class FragmentCursor implements Cursor<ASTNode> {
     static from(fragSet: TabFragment[], startingPos?: number): FragmentCursor;
     get name(): string;
     get ranges(): number[];
-    get node(): Readonly<ASTNode>;
+    get node(): ASTNode;
     sourceSyntaxNode(): AnchoredSyntaxCursor;
     getAncestors(): Readonly<ASTNode>[];
     firstChild(): boolean;
@@ -40,7 +40,7 @@ declare class ASTCursor implements Cursor<ASTNode> {
     static from(nodeSet: ASTNode[]): ASTCursor;
     get name(): string;
     get ranges(): number[];
-    get node(): Readonly<ASTNode>;
+    get node(): ASTNode;
     sourceSyntaxNode(): AnchoredSyntaxCursor;
     getAncestors(): Readonly<ASTNode>[];
     firstChild(): boolean;
@@ -161,8 +161,8 @@ declare class TabFragment {
     get isParsed(): boolean;
 }
 declare type IteratorSpec = {
-    enter: (node: Readonly<ASTNode>, getCursor: () => FragmentCursor) => false | void;
-    leave?: (node: Readonly<ASTNode>, getCursor: () => FragmentCursor) => void;
+    enter: (node: ASTNode, getCursor: () => FragmentCursor) => false | void;
+    leave?: (node: ASTNode, getCursor: () => FragmentCursor) => void;
     from?: number;
     to?: number;
 };
