@@ -46,6 +46,8 @@
   "dependencies": {
     "@codemirror/language": "^0.20.0",
     "@codemirror/state": "^0.20.0",
+    "@types/object-hash": "^2.2.1",
+    "object-hash": "^3.0.0",
     "parser-tablature": "github:tab-edit/parser-tablature"
   }
 }

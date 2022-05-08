@@ -1,6 +1,7 @@
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { ASTNode, SingleSpanNode } from "./nodes";
 import { TabFragment } from "./tab_fragment";
+import objectHash from 'object-hash';
 
 export interface Cursor<T> {
     name: string;
@@ -15,7 +16,6 @@ export interface Cursor<T> {
 
 export class FragmentCursor implements Cursor<ASTNode> {
     private constructor(
-        // might want to change this to an array of numbers.
         private fragSet: TabFragment[],
         private pointer: number = 0,
         private currentCursor?: ASTCursor
@@ -51,6 +51,13 @@ export class FragmentCursor implements Cursor<ASTNode> {
         return this.currentCursor.nextSibling();
     }
     fork() { return new FragmentCursor(this.fragSet, this.pointer, this.currentCursor) }
+    /**
+     * Generates a hash for the current node that the cursor is pointing to. This hash
+     * is unique for every node in the fragment set, given that each fragment in the fragment
+     * covers a different range of the source document.
+     * @returns a string hash for the node
+     */
+    nodeHash() { return objectHash([this.node.hash(), this.fragSet[this.pointer].from]) }
 }
 
 export class ASTCursor implements Cursor<ASTNode> {

@@ -1,6 +1,7 @@
 import { Text } from "@codemirror/state";
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { AnchoredSyntaxCursor } from "./cursors";
+import objectHash from "object-hash";
 
 export enum SyntaxNodeTypes {
     Tablature = "Tablature",
@@ -81,6 +82,13 @@ export abstract class ASTNode {
             }
         }
         return rngs;
+    }
+     /**
+     * Generates a hash for the node.
+     * @returns a string hash for the node
+     */
+    hash() {
+        return objectHash([this.name, ...this.ranges])
     }
 }
 

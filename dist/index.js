@@ -1,11 +1,10 @@
 import { StateEffect, StateField, Facet, EditorState } from '@codemirror/state';
 import { ViewPlugin, logException } from '@codemirror/view';
 import { ensureSyntaxTree } from '@codemirror/language';
+import objectHash from 'object-hash';
 
 class FragmentCursor {
-    constructor(
-    // might want to change this to an array of numbers.
-    fragSet, pointer = 0, currentCursor) {
+    constructor(fragSet, pointer = 0, currentCursor) {
         this.fragSet = fragSet;
         this.pointer = pointer;
         this.currentCursor = currentCursor;
@@ -42,6 +41,13 @@ class FragmentCursor {
         return this.currentCursor.nextSibling();
     }
     fork() { return new FragmentCursor(this.fragSet, this.pointer, this.currentCursor); }
+    /**
+     * Generates a hash for the current node that the cursor is pointing to. This hash
+     * is unique for every node in the fragment set, given that each fragment in the fragment
+     * covers a different range of the source document.
+     * @returns a string hash for the node
+     */
+    nodeHash() { return objectHash([this.node.hash(), this.fragSet[this.pointer].from]); }
 }
 class ASTCursor {
     constructor(
@@ -255,6 +261,13 @@ class ASTNode {
             }
         }
         return rngs;
+    }
+    /**
+    * Generates a hash for the node.
+    * @returns a string hash for the node
+    */
+    hash() {
+        return objectHash([this.name, ...this.ranges]);
     }
 }
 class TabSegment extends ASTNode {

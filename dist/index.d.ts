@@ -31,6 +31,13 @@ declare class FragmentCursor implements Cursor<ASTNode> {
     prevSibling(): boolean;
     nextSibling(): boolean;
     fork(): FragmentCursor;
+    /**
+     * Generates a hash for the current node that the cursor is pointing to. This hash
+     * is unique for every node in the fragment set, given that each fragment in the fragment
+     * covers a different range of the source document.
+     * @returns a string hash for the node
+     */
+    nodeHash(): string;
 }
 declare class ASTCursor implements Cursor<ASTNode> {
     private nodeSet;
@@ -129,6 +136,11 @@ declare abstract class ASTNode {
     protected computeRanges(sourceNodes: {
         [type: string]: SyntaxNode[];
     }, offset: number): number[];
+    /**
+    * Generates a hash for the node.
+    * @returns a string hash for the node
+    */
+    hash(): string;
 }
 
 declare class LinearParser {
