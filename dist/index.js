@@ -266,6 +266,8 @@ class ASTNode {
     * Generates a hash for the node. This hash is generated using the node's
     * name, as well as the ranges the node covers relative to the offset
     * initially provided in this class' constructor.
+    * Only safe to use when you know what you're doing. If you want to get a hash for a node
+    * in your TabTree, look at the FragmentCursor.nodeHash() function
     * @returns a string hash for the node
     */
     hash() {
