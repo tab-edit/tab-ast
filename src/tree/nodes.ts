@@ -84,7 +84,9 @@ export abstract class ASTNode {
         return rngs;
     }
      /**
-     * Generates a hash for the node.
+     * Generates a hash for the node. This hash is generated using the node's 
+     * name, as well as the ranges the node covers relative to the offset 
+     * initially provided in this class' constructor.
      * @returns a string hash for the node
      */
     hash() {
