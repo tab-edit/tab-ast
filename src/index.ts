@@ -511,3 +511,4 @@ export class TabLanguageSupport {
 export { TabTree } from './tree/tab_fragment';
 export { ASTCursor, FragmentCursor, Cursor } from './tree/cursors';
 export { ASTNode } from './tree/nodes';
+export { SourceSyntaxNodeTypes } from "./tree/nodes";

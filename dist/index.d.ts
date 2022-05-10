@@ -23,7 +23,7 @@ declare class FragmentCursor implements Cursor<ASTNode> {
     get name(): string;
     get ranges(): number[];
     get node(): ASTNode;
-    sourceSyntaxNode(): AnchoredSyntaxCursor;
+    sourceSyntaxCursor(): AnchoredSyntaxCursor;
     getAncestors(): Readonly<ASTNode>[];
     firstChild(): boolean;
     lastChild(): boolean;
@@ -48,7 +48,7 @@ declare class ASTCursor implements Cursor<ASTNode> {
     get name(): string;
     get ranges(): number[];
     get node(): ASTNode;
-    sourceSyntaxNode(): AnchoredSyntaxCursor;
+    sourceSyntaxCursor(): AnchoredSyntaxCursor;
     getAncestors(): Readonly<ASTNode>[];
     firstChild(): boolean;
     lastChild(): boolean;
@@ -89,7 +89,7 @@ declare class OffsetSyntaxNode {
     getChildren(type: string | number): OffsetSyntaxNode[];
 }
 
-declare enum SyntaxNodeTypes {
+declare enum SourceSyntaxNodeTypes {
     Tablature = "Tablature",
     TabSegment = "TabSegment",
     TabSegmentLine = "TabSegmentLine",
@@ -165,7 +165,7 @@ declare class TabFragment {
     readonly from: number;
     readonly to: number;
     private linearParser?;
-    static get AnchorNode(): SyntaxNodeTypes;
+    static get AnchorNode(): SourceSyntaxNodeTypes;
     readonly isBlankFragment: boolean;
     constructor(from: number, to: number, rootNode: SyntaxNode, editorState: EditorState, linearParser?: LinearParser);
     advance(): ASTCursor | null;
@@ -336,4 +336,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { ASTCursor, ASTNode, Cursor, FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTCursor, ASTNode, Cursor, FragmentCursor, ParseContext, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };

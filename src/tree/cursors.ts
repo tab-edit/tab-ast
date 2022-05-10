@@ -29,7 +29,7 @@ export class FragmentCursor implements Cursor<ASTNode> {
     get name() { return this.currentCursor.name }
     get ranges() { return this.currentCursor.ranges }
     get node() { return this.currentCursor.node }
-    sourceSyntaxNode() { return this.currentCursor.sourceSyntaxNode() }
+    sourceSyntaxCursor() { return this.currentCursor.sourceSyntaxCursor() }
     getAncestors() { return this.currentCursor.getAncestors() }
     firstChild() { return this.currentCursor.firstChild() }
     lastChild() { return this.currentCursor.lastChild() }
@@ -75,7 +75,7 @@ export class ASTCursor implements Cursor<ASTNode> {
     get name() { return this.nodeSet[this.pointer].name }
     get ranges() { return Array.from(this.nodeSet[this.pointer].ranges) }
     get node() { return this.nodeSet[this.pointer] }
-    sourceSyntaxNode() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
+    sourceSyntaxCursor() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
 
     getAncestors() {
         return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));

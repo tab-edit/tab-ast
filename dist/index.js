@@ -19,7 +19,7 @@ class FragmentCursor {
     get name() { return this.currentCursor.name; }
     get ranges() { return this.currentCursor.ranges; }
     get node() { return this.currentCursor.node; }
-    sourceSyntaxNode() { return this.currentCursor.sourceSyntaxNode(); }
+    sourceSyntaxCursor() { return this.currentCursor.sourceSyntaxCursor(); }
     getAncestors() { return this.currentCursor.getAncestors(); }
     firstChild() { return this.currentCursor.firstChild(); }
     lastChild() { return this.currentCursor.lastChild(); }
@@ -65,7 +65,7 @@ class ASTCursor {
     get name() { return this.nodeSet[this.pointer].name; }
     get ranges() { return Array.from(this.nodeSet[this.pointer].ranges); }
     get node() { return this.nodeSet[this.pointer]; }
-    sourceSyntaxNode() { var _a; return ((_a = this.nodeSet[this.pointer]) === null || _a === void 0 ? void 0 : _a.getRootNodeTraverser()) || null; }
+    sourceSyntaxCursor() { var _a; return ((_a = this.nodeSet[this.pointer]) === null || _a === void 0 ? void 0 : _a.getRootNodeTraverser()) || null; }
     getAncestors() {
         return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
     }
@@ -201,34 +201,34 @@ class OffsetSyntaxNode {
     }
 }
 
-var SyntaxNodeTypes;
-(function (SyntaxNodeTypes) {
-    SyntaxNodeTypes["Tablature"] = "Tablature";
-    SyntaxNodeTypes["TabSegment"] = "TabSegment";
-    SyntaxNodeTypes["TabSegmentLine"] = "TabSegmentLine";
-    SyntaxNodeTypes["TabString"] = "TabString";
-    SyntaxNodeTypes["MeasureLineName"] = "MeasureLineName";
-    SyntaxNodeTypes["MeasureLine"] = "MeasureLine";
-    SyntaxNodeTypes["Note"] = "Note";
-    SyntaxNodeTypes["NoteDecorator"] = "NoteDecorator";
-    SyntaxNodeTypes["NoteConnector"] = "NoteConnector";
-    SyntaxNodeTypes["ConnectorSymbol"] = "ConnectorSymbol";
-    SyntaxNodeTypes["Hammer"] = "Hammer";
-    SyntaxNodeTypes["Pull"] = "Pull";
-    SyntaxNodeTypes["Slide"] = "Slide";
-    SyntaxNodeTypes["Fret"] = "Fret";
-    SyntaxNodeTypes["Harmonic"] = "Harmonic";
-    SyntaxNodeTypes["Grace"] = "Frace";
-    SyntaxNodeTypes["Comment"] = "Comment";
-    SyntaxNodeTypes["RepeatLine"] = "RepeatLine";
-    SyntaxNodeTypes["Repeat"] = "Repeat";
-    SyntaxNodeTypes["Multiplier"] = "Multiplier";
-    SyntaxNodeTypes["TimeSignature"] = "TimeSignature";
-    SyntaxNodeTypes["TimeSigLine"] = "TimeSigLine";
-    SyntaxNodeTypes["TimingLine"] = "TimingLine";
-    SyntaxNodeTypes["Modifier"] = "Modifier";
-    SyntaxNodeTypes["InvalidToken"] = "\u26A0";
-})(SyntaxNodeTypes || (SyntaxNodeTypes = {}));
+var SourceSyntaxNodeTypes;
+(function (SourceSyntaxNodeTypes) {
+    SourceSyntaxNodeTypes["Tablature"] = "Tablature";
+    SourceSyntaxNodeTypes["TabSegment"] = "TabSegment";
+    SourceSyntaxNodeTypes["TabSegmentLine"] = "TabSegmentLine";
+    SourceSyntaxNodeTypes["TabString"] = "TabString";
+    SourceSyntaxNodeTypes["MeasureLineName"] = "MeasureLineName";
+    SourceSyntaxNodeTypes["MeasureLine"] = "MeasureLine";
+    SourceSyntaxNodeTypes["Note"] = "Note";
+    SourceSyntaxNodeTypes["NoteDecorator"] = "NoteDecorator";
+    SourceSyntaxNodeTypes["NoteConnector"] = "NoteConnector";
+    SourceSyntaxNodeTypes["ConnectorSymbol"] = "ConnectorSymbol";
+    SourceSyntaxNodeTypes["Hammer"] = "Hammer";
+    SourceSyntaxNodeTypes["Pull"] = "Pull";
+    SourceSyntaxNodeTypes["Slide"] = "Slide";
+    SourceSyntaxNodeTypes["Fret"] = "Fret";
+    SourceSyntaxNodeTypes["Harmonic"] = "Harmonic";
+    SourceSyntaxNodeTypes["Grace"] = "Frace";
+    SourceSyntaxNodeTypes["Comment"] = "Comment";
+    SourceSyntaxNodeTypes["RepeatLine"] = "RepeatLine";
+    SourceSyntaxNodeTypes["Repeat"] = "Repeat";
+    SourceSyntaxNodeTypes["Multiplier"] = "Multiplier";
+    SourceSyntaxNodeTypes["TimeSignature"] = "TimeSignature";
+    SourceSyntaxNodeTypes["TimeSigLine"] = "TimeSigLine";
+    SourceSyntaxNodeTypes["TimingLine"] = "TimingLine";
+    SourceSyntaxNodeTypes["Modifier"] = "Modifier";
+    SourceSyntaxNodeTypes["InvalidToken"] = "\u26A0";
+})(SourceSyntaxNodeTypes || (SourceSyntaxNodeTypes = {}));
 class ASTNode {
     constructor(
     /// mapping of SyntaxNode type => syntax nodes where the syntax nodes are the source
@@ -282,13 +282,13 @@ class ASTNode {
 }
 class TabSegment extends ASTNode {
     getRootNodeTraverser() {
-        return new AnchoredSyntaxCursor(this.sourceNodes[SyntaxNodeTypes.TabSegment][0], this.offset);
+        return new AnchoredSyntaxCursor(this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0], this.offset);
     }
     createChildren(sourceText) {
-        let modifiers = this.sourceNodes[SyntaxNodeTypes.TabSegment][0].getChildren(SyntaxNodeTypes.Modifier);
+        let modifiers = this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0].getChildren(SourceSyntaxNodeTypes.Modifier);
         let strings = [];
-        for (let line of this.sourceNodes[SyntaxNodeTypes.TabSegment][0].getChildren(SyntaxNodeTypes.TabSegmentLine)) {
-            strings.push(line.getChildren(SyntaxNodeTypes.TabString).reverse()); //reversed for efficiency in performing remove operations
+        for (let line of this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0].getChildren(SourceSyntaxNodeTypes.TabSegmentLine)) {
+            strings.push(line.getChildren(SourceSyntaxNodeTypes.TabString).reverse()); //reversed for efficiency in performing remove operations
         }
         let blocks = []; //each array of syntax node is a block
         let blockAnchors = [];
@@ -362,8 +362,8 @@ class TabSegment extends ASTNode {
         let tabBlocks = [];
         for (bI = 0; bI < blocks.length; bI++) {
             tabBlocks.push(new TabBlock({
-                [SyntaxNodeTypes.Modifier]: blockModifiers[bI] || [],
-                [SyntaxNodeTypes.TabString]: blocks[bI]
+                [SourceSyntaxNodeTypes.Modifier]: blockModifiers[bI] || [],
+                [SourceSyntaxNodeTypes.TabString]: blocks[bI]
             }, this.offset));
         }
         this.disposeSourceNodes();
@@ -376,31 +376,31 @@ class TabSegment extends ASTNode {
 class TabBlock extends ASTNode {
     createChildren() {
         let result = [];
-        let modifiers = this.sourceNodes[SyntaxNodeTypes.Modifier];
+        let modifiers = this.sourceNodes[SourceSyntaxNodeTypes.Modifier];
         for (let mod of modifiers) {
             result.push(Modifier.from(mod.name, { [mod.name]: [mod] }, this.offset));
         }
-        let strings = this.sourceNodes[SyntaxNodeTypes.TabString];
+        let strings = this.sourceNodes[SourceSyntaxNodeTypes.TabString];
         let measureLineNames = [];
         let measures = [];
         for (let string of strings) {
             // make sure multiplier is inserted as a child before all measures so it is traversed first
-            let multiplier = string.getChild(SyntaxNodeTypes.Multiplier);
+            let multiplier = string.getChild(SourceSyntaxNodeTypes.Multiplier);
             if (multiplier)
                 result.push(Modifier.from(multiplier.name, { [multiplier.name]: [multiplier] }, this.offset));
-            let mlineName = string.getChild(SyntaxNodeTypes.MeasureLineName);
+            let mlineName = string.getChild(SourceSyntaxNodeTypes.MeasureLineName);
             if (mlineName)
                 measureLineNames.push(mlineName);
-            let measurelines = string.getChildren(SyntaxNodeTypes.MeasureLine);
+            let measurelines = string.getChildren(SourceSyntaxNodeTypes.MeasureLine);
             for (let i = 0; i < measurelines.length; i++) {
                 if (!measures[i])
                     measures[i] = [];
                 measures[i].push(measurelines[i]);
             }
         }
-        result.push(new LineNaming({ [SyntaxNodeTypes.MeasureLineName]: measureLineNames }, this.offset));
+        result.push(new LineNaming({ [SourceSyntaxNodeTypes.MeasureLineName]: measureLineNames }, this.offset));
         for (let i = 0; i < measures.length; i++) {
-            result.push(new Measure({ [SyntaxNodeTypes.MeasureLine]: measures[i] }, this.offset));
+            result.push(new Measure({ [SourceSyntaxNodeTypes.MeasureLine]: measures[i] }, this.offset));
         }
         this.disposeSourceNodes();
         return result;
@@ -409,7 +409,7 @@ class TabBlock extends ASTNode {
 class Measure extends ASTNode {
     createChildren(sourceText) {
         var _a;
-        let lines = this.sourceNodes[SyntaxNodeTypes.MeasureLine];
+        let lines = this.sourceNodes[SourceSyntaxNodeTypes.MeasureLine];
         let measureComponentsByLine = [];
         let mcAnchors = [];
         for (let i = 0; i < lines.length; i++) {
@@ -422,10 +422,10 @@ class Measure extends ASTNode {
             let cursorCopy = cursor.node.cursor();
             let connectorRecursionRoot = null;
             do {
-                if (cursorCopy.type.is(SyntaxNodeTypes.Note) || cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
+                if (cursorCopy.type.is(SourceSyntaxNodeTypes.Note) || cursorCopy.type.is(SourceSyntaxNodeTypes.NoteDecorator)) {
                     measureComponentsByLine[i].push(cursorCopy.node);
-                    if (cursorCopy.type.is(SyntaxNodeTypes.NoteDecorator)) {
-                        mcAnchors[i].push(this.charDistance(line.from, (((_a = cursorCopy.node.getChild(SyntaxNodeTypes.Note)) === null || _a === void 0 ? void 0 : _a.from) || cursorCopy.from), sourceText));
+                    if (cursorCopy.type.is(SourceSyntaxNodeTypes.NoteDecorator)) {
+                        mcAnchors[i].push(this.charDistance(line.from, (((_a = cursorCopy.node.getChild(SourceSyntaxNodeTypes.Note)) === null || _a === void 0 ? void 0 : _a.from) || cursorCopy.from), sourceText));
                     }
                     else
                         mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, sourceText));
@@ -435,13 +435,13 @@ class Measure extends ASTNode {
                     }
                     continue;
                 }
-                if (!cursorCopy.node.type.is(SyntaxNodeTypes.NoteConnector))
+                if (!cursorCopy.node.type.is(SourceSyntaxNodeTypes.NoteConnector))
                     break;
                 if (!connectorRecursionRoot)
                     connectorRecursionRoot = cursorCopy.node.cursor();
                 measureComponentsByLine[i].push(cursorCopy.node);
                 let connector = cursorCopy.node;
-                let firstNote = connector.getChild(SyntaxNodeTypes.Note) || connector.getChild(SyntaxNodeTypes.NoteDecorator);
+                let firstNote = connector.getChild(SourceSyntaxNodeTypes.Note) || connector.getChild(SourceSyntaxNodeTypes.NoteDecorator);
                 if (firstNote) {
                     mcAnchors[i].push(this.charDistance(line.from, firstNote.from, sourceText));
                     cursorCopy = firstNote.cursor();
@@ -511,11 +511,11 @@ class Sound extends ASTNode {
         let components = this.sourceNodes.MultiType; // TODO: MultiType does not correspond to any node in the Syntax Tree. Think of a better way to transfer this data
         let result = [];
         for (let component of components) {
-            if (component.type.is(SyntaxNodeTypes.Note))
+            if (component.type.is(SourceSyntaxNodeTypes.Note))
                 result.push(Note.from(component.name, { [component.name]: [component] }, this.offset));
-            else if (component.type.is(SyntaxNodeTypes.NoteDecorator))
+            else if (component.type.is(SourceSyntaxNodeTypes.NoteDecorator))
                 result.push(NoteDecorator.from(component.name, { [component.name]: [component] }, this.offset));
-            else if (component.type.is(SyntaxNodeTypes.NoteConnector))
+            else if (component.type.is(SourceSyntaxNodeTypes.NoteConnector))
                 result.push(NoteConnector.from(component.name, { [component.name]: [component] }, this.offset));
         }
         return result;
@@ -523,14 +523,14 @@ class Sound extends ASTNode {
 }
 class MeasureLineName extends ASTNode {
     getRootNodeTraverser() {
-        return new AnchoredSyntaxCursor(this.sourceNodes[SyntaxNodeTypes.MeasureLineName][0], this.offset);
+        return new AnchoredSyntaxCursor(this.sourceNodes[SourceSyntaxNodeTypes.MeasureLineName][0], this.offset);
     }
     createChildren() { return []; }
 }
 class LineNaming extends ASTNode {
     createChildren() {
-        let names = this.sourceNodes[SyntaxNodeTypes.MeasureLineName];
-        return names.map((name) => new MeasureLineName({ [SyntaxNodeTypes.MeasureLineName]: [name] }, this.offset));
+        let names = this.sourceNodes[SourceSyntaxNodeTypes.MeasureLineName];
+        return names.map((name) => new MeasureLineName({ [SourceSyntaxNodeTypes.MeasureLineName]: [name] }, this.offset));
     }
 }
 class NoteConnector extends ASTNode {
@@ -565,14 +565,14 @@ class NoteConnector extends ASTNode {
         if (!cursor.firstChild())
             return [];
         do {
-            if (cursor.type.is(SyntaxNodeTypes.Note) || cursor.type.is(SyntaxNodeTypes.NoteDecorator)) {
+            if (cursor.type.is(SourceSyntaxNodeTypes.Note) || cursor.type.is(SourceSyntaxNodeTypes.NoteDecorator)) {
                 notes.push(cursor.node);
                 if (nestedConnectorExit) {
                     cursor = nestedConnectorExit.cursor();
                     nestedConnectorExit = null;
                 }
             }
-            else if (cursor.type.is(SyntaxNodeTypes.NoteConnector)) {
+            else if (cursor.type.is(SourceSyntaxNodeTypes.NoteConnector)) {
                 nestedConnectorExit = cursor.node;
                 cursor.firstChild();
             }
@@ -580,48 +580,48 @@ class NoteConnector extends ASTNode {
         return notes;
     }
     createChildren() { return this.notes.map((node) => Note.from(node.name, { [node.name]: [node] }, this.offset)); }
-    static isNoteConnector(name) { return name in [SyntaxNodeTypes.Hammer, SyntaxNodeTypes.Pull, SyntaxNodeTypes.Slide]; }
+    static isNoteConnector(name) { return name in [SourceSyntaxNodeTypes.Hammer, SourceSyntaxNodeTypes.Pull, SourceSyntaxNodeTypes.Slide]; }
     static from(type, sourceNodes, offset) {
         switch (type) {
-            case SyntaxNodeTypes.Hammer: return new Hammer(sourceNodes, offset);
-            case SyntaxNodeTypes.Pull: return new Pull(sourceNodes, offset);
-            case SyntaxNodeTypes.Slide: return new Slide(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.Hammer: return new Hammer(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.Pull: return new Pull(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.Slide: return new Slide(sourceNodes, offset);
         }
         throw new Error(`Invalid NoteConnector type "${type}"`);
     }
 }
 class Hammer extends NoteConnector {
-    getType() { return SyntaxNodeTypes.Hammer; }
+    getType() { return SourceSyntaxNodeTypes.Hammer; }
 }
 class Pull extends NoteConnector {
-    getType() { return SyntaxNodeTypes.Pull; }
+    getType() { return SourceSyntaxNodeTypes.Pull; }
 }
 class Slide extends NoteConnector {
-    getType() { return SyntaxNodeTypes.Slide; }
+    getType() { return SourceSyntaxNodeTypes.Slide; }
 }
 class NoteDecorator extends ASTNode {
     getRootNodeTraverser() {
         return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
     }
     createChildren() {
-        let note = this.sourceNodes[this.getType()][0].getChild(SyntaxNodeTypes.Note);
+        let note = this.sourceNodes[this.getType()][0].getChild(SourceSyntaxNodeTypes.Note);
         if (!note)
             return [];
         return [Note.from(note.name, { [note.name]: [note] }, this.offset)];
     }
     static from(type, sourceNodes, offset) {
         switch (type) {
-            case SyntaxNodeTypes.Grace: return new Grace(sourceNodes, offset);
-            case SyntaxNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.Grace: return new Grace(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
         }
         throw new Error(`Invalid NoteDecorator type "${type}"`);
     }
 }
 class Grace extends NoteDecorator {
-    getType() { return SyntaxNodeTypes.Grace; }
+    getType() { return SourceSyntaxNodeTypes.Grace; }
 }
 class Harmonic extends NoteDecorator {
-    getType() { return SyntaxNodeTypes.Harmonic; }
+    getType() { return SourceSyntaxNodeTypes.Harmonic; }
 }
 class Note extends ASTNode {
     createChildren() { return []; }
@@ -630,13 +630,13 @@ class Note extends ASTNode {
     }
     static from(type, sourceNodes, offset) {
         switch (type) {
-            case SyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
         }
         throw new Error(`Invalid Note type "${type}"`);
     }
 }
 class Fret extends Note {
-    getType() { return SyntaxNodeTypes.Fret; }
+    getType() { return SourceSyntaxNodeTypes.Fret; }
 }
 // modifiers
 class Modifier extends ASTNode {
@@ -648,21 +648,21 @@ class Modifier extends ASTNode {
     }
     static from(type, sourceNodes, offset) {
         switch (type) {
-            case SyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
-            case SyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
-            case SyntaxNodeTypes.Multiplier: return new Multiplier(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
+            case SourceSyntaxNodeTypes.Multiplier: return new Multiplier(sourceNodes, offset);
         }
         throw new Error(`Invalid Modifier type "${type}"`);
     }
 }
 class Repeat extends Modifier {
-    getType() { return SyntaxNodeTypes.Repeat; }
+    getType() { return SourceSyntaxNodeTypes.Repeat; }
 }
 class TimeSignature extends Modifier {
-    getType() { return SyntaxNodeTypes.TimeSignature; }
+    getType() { return SourceSyntaxNodeTypes.TimeSignature; }
 }
 class Multiplier extends Modifier {
-    getType() { return SyntaxNodeTypes.Multiplier; }
+    getType() { return SourceSyntaxNodeTypes.Multiplier; }
 }
 
 /// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked-list-like structure
@@ -763,7 +763,7 @@ class TabFragment {
         this.linearParser = new LinearParser(initialContent, editorState.doc);
     }
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
-    static get AnchorNode() { return SyntaxNodeTypes.TabSegment; }
+    static get AnchorNode() { return SourceSyntaxNodeTypes.TabSegment; }
     advance() {
         if (this.isBlankFragment)
             return ASTCursor.dud;
@@ -1450,5 +1450,5 @@ class TabLanguageSupport {
     }
 }
 
-export { ASTCursor, ASTNode, FragmentCursor, ParseContext, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTCursor, ASTNode, FragmentCursor, ParseContext, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map
