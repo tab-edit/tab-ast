@@ -54,7 +54,7 @@ export class FragmentCursor implements Cursor<ASTNode> {
     /**
      * Generates a hash for the current node that the cursor is pointing to. This hash
      * is unique for every node in the fragment set, given that each fragment in the fragment
-     * covers a different range of the source document.
+     * set covers a different range of the source document.
      * @returns a string hash for the node
      */
     nodeHash() { return objectHash([this.node.hash(), this.fragSet[this.pointer].from]) }
@@ -212,4 +212,11 @@ class OffsetSyntaxNode {
     get name() { return this.node.name }
     get from() { return this.node.from - this.offset }
     get to() { return this.node.to - this.offset }
+
+    getChild(type: string | number) {
+        return new OffsetSyntaxNode(this.node.getChild(type), this.offset);
+    }
+    getChildren(type: string | number) {
+        return this.node.getChildren(type).map((node) => new OffsetSyntaxNode(node, this.offset));
+    }
 }

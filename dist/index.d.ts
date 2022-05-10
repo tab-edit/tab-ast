@@ -34,7 +34,7 @@ declare class FragmentCursor implements Cursor<ASTNode> {
     /**
      * Generates a hash for the current node that the cursor is pointing to. This hash
      * is unique for every node in the fragment set, given that each fragment in the fragment
-     * covers a different range of the source document.
+     * set covers a different range of the source document.
      * @returns a string hash for the node
      */
     nodeHash(): string;
@@ -85,6 +85,8 @@ declare class OffsetSyntaxNode {
     get name(): string;
     get from(): number;
     get to(): number;
+    getChild(type: string | number): OffsetSyntaxNode;
+    getChildren(type: string | number): OffsetSyntaxNode[];
 }
 
 declare enum SyntaxNodeTypes {
