@@ -23,7 +23,9 @@ declare class FragmentCursor implements Cursor<ASTNode> {
     get name(): string;
     get ranges(): number[];
     get node(): ASTNode;
-    sourceSyntaxCursor(): AnchoredSyntaxCursor;
+    sourceSyntaxCursor(): {
+        [type: string]: OffsetSyntaxNode[];
+    };
     getAncestors(): Readonly<ASTNode>[];
     firstChild(): boolean;
     lastChild(): boolean;
@@ -48,7 +50,9 @@ declare class ASTCursor implements Cursor<ASTNode> {
     get name(): string;
     get ranges(): number[];
     get node(): ASTNode;
-    sourceSyntaxCursor(): AnchoredSyntaxCursor;
+    sourceSyntaxNodes(): {
+        [type: string]: OffsetSyntaxNode[];
+    };
     getAncestors(): Readonly<ASTNode>[];
     firstChild(): boolean;
     lastChild(): boolean;
@@ -68,7 +72,7 @@ declare class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
     get name(): string;
     get from(): number;
     get to(): number;
-    get node(): Readonly<OffsetSyntaxNode>;
+    get node(): OffsetSyntaxNode;
     firstChild(): boolean;
     lastChild(): boolean;
     enter(pos: number, side: -1 | 0 | 1): boolean;
@@ -85,6 +89,7 @@ declare class OffsetSyntaxNode {
     get name(): string;
     get from(): number;
     get to(): number;
+    cursor(): AnchoredSyntaxCursor;
     getChild(type: string | number): OffsetSyntaxNode;
     getChildren(type: string | number): OffsetSyntaxNode[];
 }
@@ -118,25 +123,24 @@ declare enum SourceSyntaxNodeTypes {
 }
 declare abstract class ASTNode {
     protected sourceNodes: {
-        [type: string]: SyntaxNode[];
+        [type: string]: OffsetSyntaxNode[];
     };
     readonly offset: number;
     get isSingleSpanNode(): boolean;
     readonly ranges: Uint16Array;
     constructor(sourceNodes: {
-        [type: string]: SyntaxNode[];
+        [type: string]: OffsetSyntaxNode[];
     }, offset: number);
     get name(): string;
     private parsed;
     get isParsed(): boolean;
     parse(sourceText: Text): ASTNode[];
     protected abstract createChildren(sourceText: Text): ASTNode[];
-    protected disposeSourceNodes(): void;
     private _length;
     increaseLength(children: ASTNode[]): void;
     get length(): number;
     protected computeRanges(sourceNodes: {
-        [type: string]: SyntaxNode[];
+        [type: string]: OffsetSyntaxNode[];
     }, offset: number): number[];
     /**
     * Generates a hash for the node. This hash is generated using the node's
@@ -147,6 +151,9 @@ declare abstract class ASTNode {
     * @returns a string hash for the node
     */
     hash(): string;
+    get sourceSyntaxNodes(): {
+        [type: string]: OffsetSyntaxNode[];
+    };
 }
 
 declare class LinearParser {

@@ -1,5 +1,5 @@
 import { SyntaxNode, TreeCursor } from "@lezer/common";
-import { ASTNode, SingleSpanNode } from "./nodes";
+import { ASTNode } from "./nodes";
 import { TabFragment } from "./tab_fragment";
 import objectHash from 'object-hash';
 
@@ -29,7 +29,7 @@ export class FragmentCursor implements Cursor<ASTNode> {
     get name() { return this.currentCursor.name }
     get ranges() { return this.currentCursor.ranges }
     get node() { return this.currentCursor.node }
-    sourceSyntaxCursor() { return this.currentCursor.sourceSyntaxCursor() }
+    sourceSyntaxCursor() { return this.currentCursor.sourceSyntaxNodes() }
     getAncestors() { return this.currentCursor.getAncestors() }
     firstChild() { return this.currentCursor.firstChild() }
     lastChild() { return this.currentCursor.lastChild() }
@@ -75,7 +75,7 @@ export class ASTCursor implements Cursor<ASTNode> {
     get name() { return this.nodeSet[this.pointer].name }
     get ranges() { return Array.from(this.nodeSet[this.pointer].ranges) }
     get node() { return this.nodeSet[this.pointer] }
-    sourceSyntaxCursor() { return (<SingleSpanNode> <unknown> this.nodeSet[this.pointer])?.getRootNodeTraverser() || null }
+    sourceSyntaxNodes() { return this.nodeSet[this.pointer].sourceSyntaxNodes }
 
     getAncestors() {
         return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
@@ -176,7 +176,7 @@ export class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
     get name() { return this.cursor.name }
     get from() { return this.cursor.from - this.anchorOffset }
     get to() { return this.cursor.to - this.anchorOffset }
-    get node() { return Object.freeze(new OffsetSyntaxNode(this.cursor.node, this.anchorOffset)); }
+    get node() { return new OffsetSyntaxNode(this.cursor.node, this.anchorOffset); }
     firstChild() { return this.cursor.firstChild() }
     lastChild() { return this.cursor.lastChild() }
     enter(
@@ -202,7 +202,7 @@ export class AnchoredSyntaxCursor implements Cursor<OffsetSyntaxNode> {
     }
 }
 
-class OffsetSyntaxNode {
+export class OffsetSyntaxNode {
     constructor(
         private node: SyntaxNode, 
         private offset: number
@@ -212,6 +212,7 @@ class OffsetSyntaxNode {
     get name() { return this.node.name }
     get from() { return this.node.from - this.offset }
     get to() { return this.node.to - this.offset }
+    cursor() { return new AnchoredSyntaxCursor(this.node, this.offset) }
 
     getChild(type: string | number) {
         return new OffsetSyntaxNode(this.node.getChild(type), this.offset);

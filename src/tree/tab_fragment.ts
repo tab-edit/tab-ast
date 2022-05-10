@@ -2,7 +2,7 @@
 import { EditorState } from "@codemirror/state";
 import { ASTNode, SourceSyntaxNodeTypes, TabSegment } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
-import { ASTCursor, FragmentCursor } from "./cursors";
+import { ASTCursor, FragmentCursor, OffsetSyntaxNode } from "./cursors";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 
 // TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
@@ -25,7 +25,7 @@ export class TabFragment {
             return;
         }
         if (rootNode.name!==TabFragment.AnchorNode) throw new Error(`Expected ${TabFragment.AnchorNode} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
-        let initialContent = new TabSegment({[TabFragment.AnchorNode]: [rootNode]}, this.from);
+        let initialContent = new TabSegment({[TabFragment.AnchorNode]: [new OffsetSyntaxNode(rootNode, this.from)]}, this.from);
         this.linearParser = new LinearParser(initialContent, editorState.doc);
     }
 

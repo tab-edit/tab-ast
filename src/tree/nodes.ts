@@ -1,6 +1,6 @@
 import { Text } from "@codemirror/state";
 import { SyntaxNode, TreeCursor } from "@lezer/common";
-import { AnchoredSyntaxCursor } from "./cursors";
+import { AnchoredSyntaxCursor, OffsetSyntaxNode } from "./cursors";
 import objectHash from "object-hash";
 
 export enum SourceSyntaxNodeTypes {
@@ -36,9 +36,6 @@ export enum SourceSyntaxNodeTypes {
     InvalidToken = "⚠"
 }
 
-export interface SingleSpanNode {
-    getRootNodeTraverser(): AnchoredSyntaxCursor | null;
-}
 export abstract class ASTNode {
     public get isSingleSpanNode() { return typeof (this as any).getRootNodeTraverser === "function" }
     readonly ranges: Uint16Array; // TODO: Does this really need to be Uint16Array? why not a normal array. memory benefit might be little to none
@@ -46,7 +43,7 @@ export abstract class ASTNode {
         /// mapping of SyntaxNode type => syntax nodes where the syntax nodes are the source
         /// nodes of the parse tree from which the ASTNode is being built.
         /// currently, once i lazily parse only once, i dispose of sourceNodes (set to null) for efficiency(TODO: i might remove this feature as it might not be a good idea to dispose)
-        protected sourceNodes: {[type:string]:SyntaxNode[]},
+        protected sourceNodes: {[type:string]:OffsetSyntaxNode[]},
         readonly offset: number
     ) {
         this.ranges = Uint16Array.from(this.computeRanges(sourceNodes, offset));
@@ -62,18 +59,13 @@ export abstract class ASTNode {
     }
     protected abstract createChildren(sourceText: Text): ASTNode[];
     
-    protected disposeSourceNodes() {
-        // TODO: consider if we should preserve sourceNodes
-        this.sourceNodes = {};
-    }
-    
     // the length an ASTNode and all its children take up in their source array
     private _length = 1;
     public increaseLength(children: ASTNode[]) { this._length += children.length }
     get length() { return this._length; }
 
 
-    protected computeRanges(sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): number[] {
+    protected computeRanges(sourceNodes: {[type:string]:OffsetSyntaxNode[]}, offset: number): number[] {
         let rngs:number[] = []
         for (let name in sourceNodes) {
             for (let node of sourceNodes[name]) {
@@ -94,25 +86,25 @@ export abstract class ASTNode {
     hash() {
         return objectHash([this.name, ...this.ranges])
     }
+
+
+    get sourceSyntaxNodes() { return this.sourceNodes }
 }
 
 
-export class TabSegment extends ASTNode implements SingleSpanNode {
-    public getRootNodeTraverser(): AnchoredSyntaxCursor {
-        return new AnchoredSyntaxCursor(this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0], this.offset);
-    }
+export class TabSegment extends ASTNode {
     protected createChildren(sourceText: Text): TabBlock[] {
         let modifiers = this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0].getChildren(SourceSyntaxNodeTypes.Modifier);
 
-        let strings:SyntaxNode[][] = [];
+        let strings:OffsetSyntaxNode[][] = [];
         for (let line of this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0].getChildren(SourceSyntaxNodeTypes.TabSegmentLine)) {
             strings.push(line.getChildren(SourceSyntaxNodeTypes.TabString).reverse()); //reversed for efficiency in performing remove operations
         }
 
-        let blocks:SyntaxNode[][] = [] //each array of syntax node is a block
+        let blocks:OffsetSyntaxNode[][] = [] //each array of syntax node is a block
         let blockAnchors:{to: number, from: number}[] = [];
 
-        let string:SyntaxNode, stringLine:SyntaxNode[], bI: number, isStringPlaced:boolean, anchor:{to: number, from: number}; // variables used in inner loops, but defined outside loop for efficiency
+        let string:OffsetSyntaxNode, stringLine:OffsetSyntaxNode[], bI: number, isStringPlaced:boolean, anchor:{to: number, from: number}; // variables used in inner loops, but defined outside loop for efficiency
         let firstUncompletedBlockIdx = 0;
         let hasGroupedAllStrings: boolean;
         do {
@@ -159,7 +151,7 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
         } while (!hasGroupedAllStrings);
 
         // now we have all the blocks and their anchor nodes. now we use those anchor nodes to know what modifiers belong to what block
-        let blockModifiers:SyntaxNode[][] = [];
+        let blockModifiers:OffsetSyntaxNode[][] = [];
         let modifierRange: {from: number, to: number};
         bI = 0;
         for (let modifier of modifiers) {
@@ -188,7 +180,6 @@ export class TabSegment extends ASTNode implements SingleSpanNode {
             ));
         }
         
-        this.disposeSourceNodes();
         return tabBlocks;
     }
 
@@ -208,8 +199,8 @@ export class TabBlock extends ASTNode {
 
         let strings = this.sourceNodes[SourceSyntaxNodeTypes.TabString];
 
-        let measureLineNames: SyntaxNode[] = [];
-        let measures: SyntaxNode[][] = [];
+        let measureLineNames: OffsetSyntaxNode[] = [];
+        let measures: OffsetSyntaxNode[][] = [];
         for (let string of strings) {
             // make sure multiplier is inserted as a child before all measures so it is traversed first
             let multiplier = string.getChild(SourceSyntaxNodeTypes.Multiplier);
@@ -228,7 +219,6 @@ export class TabBlock extends ASTNode {
         for (let i=0; i<measures.length; i++) {
             result.push(new Measure({[SourceSyntaxNodeTypes.MeasureLine]: measures[i]}, this.offset))
         }
-        this.disposeSourceNodes();
         return result;
     }
 }
@@ -236,7 +226,7 @@ export class TabBlock extends ASTNode {
 export class Measure extends ASTNode {
     protected createChildren(sourceText: Text): Sound[] {
         let lines = this.sourceNodes[SourceSyntaxNodeTypes.MeasureLine];
-        let measureComponentsByLine: SyntaxNode[][] = [];
+        let measureComponentsByLine: OffsetSyntaxNode[][] = [];
         let mcAnchors: number[][] = [];
         for (let i=0; i<lines.length; i++) {
             let line = lines[i];
@@ -245,7 +235,7 @@ export class Measure extends ASTNode {
             let cursor = line.cursor();
             if (!cursor.firstChild()) continue;
             let cursorCopy = cursor.node.cursor();
-            let connectorRecursionRoot: TreeCursor | null = null;
+            let connectorRecursionRoot: AnchoredSyntaxCursor | null = null;
             do {
                 if (cursorCopy.type.is(SourceSyntaxNodeTypes.Note) || cursorCopy.type.is(SourceSyntaxNodeTypes.NoteDecorator)) {
                     measureComponentsByLine[i].push(cursorCopy.node);
@@ -273,11 +263,11 @@ export class Measure extends ASTNode {
         }
 
         // similar concept used in grouping TabStrings to make TabBlocks in the TabSegment.createChildren() class
-        let sounds: SyntaxNode[][] = [];
+        let sounds: OffsetSyntaxNode[][] = [];
         let soundAnchors: number[] = [];
         let componentPointers: number[] = new Array(lines.length).fill(0);
 
-        let component: SyntaxNode, componentAnchor: number, soundIdx: number, hasGroupedAllSounds: boolean, isComponentPlaced: boolean;
+        let component: OffsetSyntaxNode, componentAnchor: number, soundIdx: number, hasGroupedAllSounds: boolean, isComponentPlaced: boolean;
         let firstUncompletedSoundIdx = 0;
         do {
             hasGroupedAllSounds = true;
@@ -345,10 +335,7 @@ export class Sound extends ASTNode {
     }
 }
 
-class MeasureLineName extends ASTNode implements SingleSpanNode {
-    public getRootNodeTraverser(): AnchoredSyntaxCursor {
-        return new AnchoredSyntaxCursor(this.sourceNodes[SourceSyntaxNodeTypes.MeasureLineName][0], this.offset);
-    }
+class MeasureLineName extends ASTNode {
     protected createChildren() { return [] } 
 }
 class LineNaming extends ASTNode {
@@ -358,19 +345,15 @@ class LineNaming extends ASTNode {
     }
 }
 
-export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
+export abstract class NoteConnector extends ASTNode {
     abstract getType(): string;
-    private notes: SyntaxNode[];
-
-    public getRootNodeTraverser(): AnchoredSyntaxCursor {
-        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
-    }
+    private notes: OffsetSyntaxNode[];
     
     // the raw parser parses note connectors recursively, so 5h3p2 would
     // parse as Hammer(5, Pull(3,2)), making the hammeron encompass also the fret 2
     // but the hammer relationship only connects 5 and 3, so we override the range computation to
     // reflect this fact.
-    protected computeRanges(sourceNodes: { [type: string]: SyntaxNode[]; }, offset: number): any[] {
+    protected computeRanges(sourceNodes: { [type: string]: OffsetSyntaxNode[]; }, offset: number): any[] {
         let connector = sourceNodes[this.getType()][0];
         let notes = this.getNotesFromNoteConnector(connector);
         this.notes = [];
@@ -386,10 +369,10 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
         }
     }
 
-    private getNotesFromNoteConnector(connector: SyntaxNode) {
-        let notes:SyntaxNode[] = [];
+    private getNotesFromNoteConnector(connector: OffsetSyntaxNode) {
+        let notes:OffsetSyntaxNode[] = [];
         let cursor = connector.cursor();
-        let nestedConnectorExit: SyntaxNode | null = null;
+        let nestedConnectorExit: OffsetSyntaxNode | null = null;
         if (!cursor.firstChild()) return [];
         do {
             if (cursor.type.is(SourceSyntaxNodeTypes.Note) || cursor.type.is(SourceSyntaxNodeTypes.NoteDecorator)) {
@@ -410,7 +393,7 @@ export abstract class NoteConnector extends ASTNode implements SingleSpanNode {
     
     static isNoteConnector(name: string) { return name in [SourceSyntaxNodeTypes.Hammer, SourceSyntaxNodeTypes.Pull, SourceSyntaxNodeTypes.Slide] }
 
-    static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): NoteConnector {
+    static from(type: string, sourceNodes: {[type:string]:OffsetSyntaxNode[]}, offset: number): NoteConnector {
         switch(type) {
             case SourceSyntaxNodeTypes.Hammer: return new Hammer(sourceNodes, offset);
             case SourceSyntaxNodeTypes.Pull: return new Pull(sourceNodes, offset);
@@ -423,17 +406,14 @@ export class Hammer extends NoteConnector { getType() { return SourceSyntaxNodeT
 export class Pull extends NoteConnector { getType() { return SourceSyntaxNodeTypes.Pull } }
 export class Slide extends NoteConnector { getType() { return SourceSyntaxNodeTypes.Slide } }
 
-export abstract class NoteDecorator extends ASTNode implements SingleSpanNode {
+export abstract class NoteDecorator extends ASTNode {
     abstract getType(): string;
-    public getRootNodeTraverser(): AnchoredSyntaxCursor {
-        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
-    }
     protected createChildren(): ASTNode[] {
         let note = this.sourceNodes[this.getType()][0].getChild(SourceSyntaxNodeTypes.Note);
         if (!note) return [];
         return [Note.from(note.name, {[note.name]: [note]}, this.offset)];
     }
-    static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): NoteDecorator {
+    static from(type: string, sourceNodes: {[type:string]:OffsetSyntaxNode[]}, offset: number): NoteDecorator {
         switch(type) {
             case SourceSyntaxNodeTypes.Grace: return new Grace(sourceNodes, offset);
             case SourceSyntaxNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
@@ -444,13 +424,10 @@ export abstract class NoteDecorator extends ASTNode implements SingleSpanNode {
 export class Grace extends NoteDecorator { getType() { return SourceSyntaxNodeTypes.Grace } }
 export class Harmonic extends NoteDecorator { getType() { return SourceSyntaxNodeTypes.Harmonic } }
 
-export abstract class Note extends ASTNode  implements SingleSpanNode {
+export abstract class Note extends ASTNode {
     abstract getType(): string;
     protected createChildren() { return [] }
-    public getRootNodeTraverser(): AnchoredSyntaxCursor {
-        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
-    }
-    static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): Note {
+    static from(type: string, sourceNodes: {[type:string]:OffsetSyntaxNode[]}, offset: number): Note {
         switch(type) {
             case SourceSyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
         }
@@ -460,15 +437,12 @@ export abstract class Note extends ASTNode  implements SingleSpanNode {
 export class Fret extends Note { getType(): string { return SourceSyntaxNodeTypes.Fret } }
 
 // modifiers
-abstract class Modifier extends ASTNode  implements SingleSpanNode {
+abstract class Modifier extends ASTNode {
     abstract getType(): string;
-    public getRootNodeTraverser(): AnchoredSyntaxCursor {
-        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
-    }
     protected createChildren(): ASTNode[] {
         return [];
     }
-    static from(type: string, sourceNodes: {[type:string]:SyntaxNode[]}, offset: number): Modifier {
+    static from(type: string, sourceNodes: {[type:string]:OffsetSyntaxNode[]}, offset: number): Modifier {
         switch(type) {
             case SourceSyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
             case SourceSyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);

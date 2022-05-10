@@ -3,204 +3,6 @@ import { ViewPlugin, logException } from '@codemirror/view';
 import { ensureSyntaxTree } from '@codemirror/language';
 import objectHash from 'object-hash';
 
-class FragmentCursor {
-    constructor(fragSet, pointer = 0, currentCursor) {
-        this.fragSet = fragSet;
-        this.pointer = pointer;
-        this.currentCursor = currentCursor;
-        if (!this.currentCursor)
-            this.currentCursor = fragSet[pointer].cursor;
-    }
-    static from(fragSet, startingPos) {
-        if (!fragSet || !fragSet.length)
-            return null;
-        return new FragmentCursor(fragSet, startingPos || 0);
-    }
-    get name() { return this.currentCursor.name; }
-    get ranges() { return this.currentCursor.ranges; }
-    get node() { return this.currentCursor.node; }
-    sourceSyntaxCursor() { return this.currentCursor.sourceSyntaxCursor(); }
-    getAncestors() { return this.currentCursor.getAncestors(); }
-    firstChild() { return this.currentCursor.firstChild(); }
-    lastChild() { return this.currentCursor.lastChild(); }
-    parent() { return this.currentCursor.parent(); }
-    prevSibling() {
-        if (!this.currentCursor.fork().parent() && this.pointer > 0) {
-            this.pointer = this.pointer - 1;
-            this.currentCursor = this.fragSet[this.pointer].cursor;
-            return true;
-        }
-        return this.currentCursor.prevSibling();
-    }
-    nextSibling() {
-        if (!this.currentCursor.fork().parent() && this.pointer + 1 < this.fragSet.length) {
-            this.pointer = this.pointer + 1;
-            this.currentCursor = this.fragSet[this.pointer].cursor;
-            return true;
-        }
-        return this.currentCursor.nextSibling();
-    }
-    fork() { return new FragmentCursor(this.fragSet, this.pointer, this.currentCursor); }
-    /**
-     * Generates a hash for the current node that the cursor is pointing to. This hash
-     * is unique for every node in the fragment set, given that each fragment in the fragment
-     * set covers a different range of the source document.
-     * @returns a string hash for the node
-     */
-    nodeHash() { return objectHash([this.node.hash(), this.fragSet[this.pointer].from]); }
-}
-class ASTCursor {
-    constructor(
-    // might want to change this to an array of numbers.
-    nodeSet, pointer = 0, ancestryTrace = []) {
-        this.nodeSet = nodeSet;
-        this.pointer = pointer;
-        this.ancestryTrace = ancestryTrace;
-    }
-    static from(nodeSet) {
-        if (!nodeSet || !nodeSet.length)
-            return null;
-        return new ASTCursor(nodeSet, 0, []);
-    }
-    get name() { return this.nodeSet[this.pointer].name; }
-    get ranges() { return Array.from(this.nodeSet[this.pointer].ranges); }
-    get node() { return this.nodeSet[this.pointer]; }
-    sourceSyntaxCursor() { var _a; return ((_a = this.nodeSet[this.pointer]) === null || _a === void 0 ? void 0 : _a.getRootNodeTraverser()) || null; }
-    getAncestors() {
-        return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
-    }
-    firstChild() {
-        if (this.nodeSet.length === 0)
-            return false;
-        let currentPointer = this.pointer;
-        if (this.nodeSet[this.pointer].length === 1)
-            return false;
-        this.pointer += 1;
-        this.ancestryTrace.push(currentPointer);
-        return true;
-    }
-    lastChild() {
-        if (!this.firstChild())
-            return false;
-        while (this.nextSibling()) { }
-        return true;
-    }
-    parent() {
-        if (this.nodeSet.length === 0)
-            return false;
-        if (this.name === TabFragment.name || this.ancestryTrace.length === 0)
-            return false;
-        this.pointer = this.ancestryTrace[this.ancestryTrace.length - 1];
-        this.ancestryTrace.pop();
-        return true;
-    }
-    prevSibling() {
-        let currentPointer = this.pointer;
-        if (!this.parent())
-            return false;
-        this.firstChild();
-        let prevSiblingPointer = this.pointer;
-        if (prevSiblingPointer === currentPointer)
-            return false;
-        while (this.nextSibling() && this.pointer !== currentPointer) {
-            prevSiblingPointer = this.pointer;
-        }
-        this.pointer = prevSiblingPointer;
-        return true;
-    }
-    nextSibling() {
-        if (!this.ancestryTrace.length)
-            return false;
-        let parentPointer = this.ancestryTrace[this.ancestryTrace.length - 1];
-        let nextInorder = this.pointer + this.nodeSet[this.pointer].length;
-        if (parentPointer + this.nodeSet[parentPointer].length <= nextInorder)
-            return false;
-        this.pointer = nextInorder;
-        return true;
-    }
-    fork() {
-        return new ASTCursor(this.nodeSet, this.pointer, this.ancestryTrace);
-    }
-    printTree() {
-        let str = this.printTreeRecursiveHelper();
-        return str;
-    }
-    printTreeRecursiveHelper() {
-        if (this.nodeSet.length == 0)
-            return "";
-        let str = `${this.nodeSet[this.pointer].name}[${this.nodeSet[this.pointer].ranges.toString()}]`;
-        if (this.firstChild())
-            str += "(";
-        else
-            return str;
-        let first = true;
-        do {
-            if (!first)
-                str += ",";
-            first = false;
-            str += this.printTreeRecursiveHelper();
-        } while (this.nextSibling());
-        str += ")";
-        this.parent();
-        return str;
-    }
-}
-ASTCursor.dud = new ASTCursor([]);
-// Don't know when we will use this, but it is for the user to 
-// be able to access and traverse the raw syntax nodes while 
-// still maintaining the fact that all nodes' positions are 
-// relative to the TabFragment in which they are contained.
-class AnchoredSyntaxCursor {
-    constructor(startingNode, anchorOffset) {
-        this.anchorOffset = anchorOffset;
-        this.cursor = startingNode.cursor();
-    }
-    get type() { return this.cursor.type; }
-    get name() { return this.cursor.name; }
-    get from() { return this.cursor.from - this.anchorOffset; }
-    get to() { return this.cursor.to - this.anchorOffset; }
-    get node() { return Object.freeze(new OffsetSyntaxNode(this.cursor.node, this.anchorOffset)); }
-    firstChild() { return this.cursor.firstChild(); }
-    lastChild() { return this.cursor.lastChild(); }
-    enter(pos, side) {
-        return this.cursor.enter(pos, side);
-    }
-    parent() {
-        if (this.name === TabFragment.AnchorNode)
-            return false;
-        return this.cursor.parent();
-    }
-    nextSibling() {
-        if (this.name === TabFragment.AnchorNode)
-            return false;
-        return this.cursor.nextSibling();
-    }
-    prevSibling() {
-        if (this.name === TabFragment.AnchorNode)
-            return false;
-        return this.cursor.nextSibling();
-    }
-    fork() {
-        return new AnchoredSyntaxCursor(this.cursor.node, this.anchorOffset);
-    }
-}
-class OffsetSyntaxNode {
-    constructor(node, offset) {
-        this.node = node;
-        this.offset = offset;
-    }
-    get type() { return this.node.type; }
-    get name() { return this.node.name; }
-    get from() { return this.node.from - this.offset; }
-    get to() { return this.node.to - this.offset; }
-    getChild(type) {
-        return new OffsetSyntaxNode(this.node.getChild(type), this.offset);
-    }
-    getChildren(type) {
-        return this.node.getChildren(type).map((node) => new OffsetSyntaxNode(node, this.offset));
-    }
-}
-
 var SourceSyntaxNodeTypes;
 (function (SourceSyntaxNodeTypes) {
     SourceSyntaxNodeTypes["Tablature"] = "Tablature";
@@ -252,10 +54,6 @@ class ASTNode {
         this.parsed = true;
         return this.createChildren(sourceText);
     }
-    disposeSourceNodes() {
-        // TODO: consider if we should preserve sourceNodes
-        this.sourceNodes = {};
-    }
     increaseLength(children) { this._length += children.length; }
     get length() { return this._length; }
     computeRanges(sourceNodes, offset) {
@@ -279,11 +77,9 @@ class ASTNode {
     hash() {
         return objectHash([this.name, ...this.ranges]);
     }
+    get sourceSyntaxNodes() { return this.sourceNodes; }
 }
 class TabSegment extends ASTNode {
-    getRootNodeTraverser() {
-        return new AnchoredSyntaxCursor(this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0], this.offset);
-    }
     createChildren(sourceText) {
         let modifiers = this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0].getChildren(SourceSyntaxNodeTypes.Modifier);
         let strings = [];
@@ -366,7 +162,6 @@ class TabSegment extends ASTNode {
                 [SourceSyntaxNodeTypes.TabString]: blocks[bI]
             }, this.offset));
         }
-        this.disposeSourceNodes();
         return tabBlocks;
     }
     lineDistance(idx, sourceText) {
@@ -402,7 +197,6 @@ class TabBlock extends ASTNode {
         for (let i = 0; i < measures.length; i++) {
             result.push(new Measure({ [SourceSyntaxNodeTypes.MeasureLine]: measures[i] }, this.offset));
         }
-        this.disposeSourceNodes();
         return result;
     }
 }
@@ -522,9 +316,6 @@ class Sound extends ASTNode {
     }
 }
 class MeasureLineName extends ASTNode {
-    getRootNodeTraverser() {
-        return new AnchoredSyntaxCursor(this.sourceNodes[SourceSyntaxNodeTypes.MeasureLineName][0], this.offset);
-    }
     createChildren() { return []; }
 }
 class LineNaming extends ASTNode {
@@ -534,9 +325,6 @@ class LineNaming extends ASTNode {
     }
 }
 class NoteConnector extends ASTNode {
-    getRootNodeTraverser() {
-        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
-    }
     // the raw parser parses note connectors recursively, so 5h3p2 would
     // parse as Hammer(5, Pull(3,2)), making the hammeron encompass also the fret 2
     // but the hammer relationship only connects 5 and 3, so we override the range computation to
@@ -600,9 +388,6 @@ class Slide extends NoteConnector {
     getType() { return SourceSyntaxNodeTypes.Slide; }
 }
 class NoteDecorator extends ASTNode {
-    getRootNodeTraverser() {
-        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
-    }
     createChildren() {
         let note = this.sourceNodes[this.getType()][0].getChild(SourceSyntaxNodeTypes.Note);
         if (!note)
@@ -625,9 +410,6 @@ class Harmonic extends NoteDecorator {
 }
 class Note extends ASTNode {
     createChildren() { return []; }
-    getRootNodeTraverser() {
-        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
-    }
     static from(type, sourceNodes, offset) {
         switch (type) {
             case SourceSyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
@@ -640,9 +422,6 @@ class Fret extends Note {
 }
 // modifiers
 class Modifier extends ASTNode {
-    getRootNodeTraverser() {
-        return new AnchoredSyntaxCursor(this.sourceNodes[this.getType()][0], this.offset);
-    }
     createChildren() {
         return [];
     }
@@ -744,6 +523,205 @@ class LPNode {
     }
 }
 
+class FragmentCursor {
+    constructor(fragSet, pointer = 0, currentCursor) {
+        this.fragSet = fragSet;
+        this.pointer = pointer;
+        this.currentCursor = currentCursor;
+        if (!this.currentCursor)
+            this.currentCursor = fragSet[pointer].cursor;
+    }
+    static from(fragSet, startingPos) {
+        if (!fragSet || !fragSet.length)
+            return null;
+        return new FragmentCursor(fragSet, startingPos || 0);
+    }
+    get name() { return this.currentCursor.name; }
+    get ranges() { return this.currentCursor.ranges; }
+    get node() { return this.currentCursor.node; }
+    sourceSyntaxCursor() { return this.currentCursor.sourceSyntaxNodes(); }
+    getAncestors() { return this.currentCursor.getAncestors(); }
+    firstChild() { return this.currentCursor.firstChild(); }
+    lastChild() { return this.currentCursor.lastChild(); }
+    parent() { return this.currentCursor.parent(); }
+    prevSibling() {
+        if (!this.currentCursor.fork().parent() && this.pointer > 0) {
+            this.pointer = this.pointer - 1;
+            this.currentCursor = this.fragSet[this.pointer].cursor;
+            return true;
+        }
+        return this.currentCursor.prevSibling();
+    }
+    nextSibling() {
+        if (!this.currentCursor.fork().parent() && this.pointer + 1 < this.fragSet.length) {
+            this.pointer = this.pointer + 1;
+            this.currentCursor = this.fragSet[this.pointer].cursor;
+            return true;
+        }
+        return this.currentCursor.nextSibling();
+    }
+    fork() { return new FragmentCursor(this.fragSet, this.pointer, this.currentCursor); }
+    /**
+     * Generates a hash for the current node that the cursor is pointing to. This hash
+     * is unique for every node in the fragment set, given that each fragment in the fragment
+     * set covers a different range of the source document.
+     * @returns a string hash for the node
+     */
+    nodeHash() { return objectHash([this.node.hash(), this.fragSet[this.pointer].from]); }
+}
+class ASTCursor {
+    constructor(
+    // might want to change this to an array of numbers.
+    nodeSet, pointer = 0, ancestryTrace = []) {
+        this.nodeSet = nodeSet;
+        this.pointer = pointer;
+        this.ancestryTrace = ancestryTrace;
+    }
+    static from(nodeSet) {
+        if (!nodeSet || !nodeSet.length)
+            return null;
+        return new ASTCursor(nodeSet, 0, []);
+    }
+    get name() { return this.nodeSet[this.pointer].name; }
+    get ranges() { return Array.from(this.nodeSet[this.pointer].ranges); }
+    get node() { return this.nodeSet[this.pointer]; }
+    sourceSyntaxNodes() { return this.nodeSet[this.pointer].sourceSyntaxNodes; }
+    getAncestors() {
+        return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
+    }
+    firstChild() {
+        if (this.nodeSet.length === 0)
+            return false;
+        let currentPointer = this.pointer;
+        if (this.nodeSet[this.pointer].length === 1)
+            return false;
+        this.pointer += 1;
+        this.ancestryTrace.push(currentPointer);
+        return true;
+    }
+    lastChild() {
+        if (!this.firstChild())
+            return false;
+        while (this.nextSibling()) { }
+        return true;
+    }
+    parent() {
+        if (this.nodeSet.length === 0)
+            return false;
+        if (this.name === TabFragment.name || this.ancestryTrace.length === 0)
+            return false;
+        this.pointer = this.ancestryTrace[this.ancestryTrace.length - 1];
+        this.ancestryTrace.pop();
+        return true;
+    }
+    prevSibling() {
+        let currentPointer = this.pointer;
+        if (!this.parent())
+            return false;
+        this.firstChild();
+        let prevSiblingPointer = this.pointer;
+        if (prevSiblingPointer === currentPointer)
+            return false;
+        while (this.nextSibling() && this.pointer !== currentPointer) {
+            prevSiblingPointer = this.pointer;
+        }
+        this.pointer = prevSiblingPointer;
+        return true;
+    }
+    nextSibling() {
+        if (!this.ancestryTrace.length)
+            return false;
+        let parentPointer = this.ancestryTrace[this.ancestryTrace.length - 1];
+        let nextInorder = this.pointer + this.nodeSet[this.pointer].length;
+        if (parentPointer + this.nodeSet[parentPointer].length <= nextInorder)
+            return false;
+        this.pointer = nextInorder;
+        return true;
+    }
+    fork() {
+        return new ASTCursor(this.nodeSet, this.pointer, this.ancestryTrace);
+    }
+    printTree() {
+        let str = this.printTreeRecursiveHelper();
+        return str;
+    }
+    printTreeRecursiveHelper() {
+        if (this.nodeSet.length == 0)
+            return "";
+        let str = `${this.nodeSet[this.pointer].name}[${this.nodeSet[this.pointer].ranges.toString()}]`;
+        if (this.firstChild())
+            str += "(";
+        else
+            return str;
+        let first = true;
+        do {
+            if (!first)
+                str += ",";
+            first = false;
+            str += this.printTreeRecursiveHelper();
+        } while (this.nextSibling());
+        str += ")";
+        this.parent();
+        return str;
+    }
+}
+ASTCursor.dud = new ASTCursor([]);
+// Don't know when we will use this, but it is for the user to 
+// be able to access and traverse the raw syntax nodes while 
+// still maintaining the fact that all nodes' positions are 
+// relative to the TabFragment in which they are contained.
+class AnchoredSyntaxCursor {
+    constructor(startingNode, anchorOffset) {
+        this.anchorOffset = anchorOffset;
+        this.cursor = startingNode.cursor();
+    }
+    get type() { return this.cursor.type; }
+    get name() { return this.cursor.name; }
+    get from() { return this.cursor.from - this.anchorOffset; }
+    get to() { return this.cursor.to - this.anchorOffset; }
+    get node() { return new OffsetSyntaxNode(this.cursor.node, this.anchorOffset); }
+    firstChild() { return this.cursor.firstChild(); }
+    lastChild() { return this.cursor.lastChild(); }
+    enter(pos, side) {
+        return this.cursor.enter(pos, side);
+    }
+    parent() {
+        if (this.name === TabFragment.AnchorNode)
+            return false;
+        return this.cursor.parent();
+    }
+    nextSibling() {
+        if (this.name === TabFragment.AnchorNode)
+            return false;
+        return this.cursor.nextSibling();
+    }
+    prevSibling() {
+        if (this.name === TabFragment.AnchorNode)
+            return false;
+        return this.cursor.nextSibling();
+    }
+    fork() {
+        return new AnchoredSyntaxCursor(this.cursor.node, this.anchorOffset);
+    }
+}
+class OffsetSyntaxNode {
+    constructor(node, offset) {
+        this.node = node;
+        this.offset = offset;
+    }
+    get type() { return this.node.type; }
+    get name() { return this.node.name; }
+    get from() { return this.node.from - this.offset; }
+    get to() { return this.node.to - this.offset; }
+    cursor() { return new AnchoredSyntaxCursor(this.node, this.offset); }
+    getChild(type) {
+        return new OffsetSyntaxNode(this.node.getChild(type), this.offset);
+    }
+    getChildren(type) {
+        return this.node.getChildren(type).map((node) => new OffsetSyntaxNode(node, this.offset));
+    }
+}
+
 // TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
 class TabFragment {
     constructor(from, to, rootNode, editorState, linearParser) {
@@ -759,7 +737,7 @@ class TabFragment {
         }
         if (rootNode.name !== TabFragment.AnchorNode)
             throw new Error(`Expected ${TabFragment.AnchorNode} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
-        let initialContent = new TabSegment({ [TabFragment.AnchorNode]: [rootNode] }, this.from);
+        let initialContent = new TabSegment({ [TabFragment.AnchorNode]: [new OffsetSyntaxNode(rootNode, this.from)] }, this.from);
         this.linearParser = new LinearParser(initialContent, editorState.doc);
     }
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
