@@ -23,7 +23,7 @@ declare class FragmentCursor implements Cursor<ASTNode> {
     get name(): string;
     get ranges(): number[];
     get node(): ASTNode;
-    sourceSyntaxCursor(): {
+    sourceSyntaxNodes(): {
         [type: string]: OffsetSyntaxNode[];
     };
     getAncestors(): Readonly<ASTNode>[];

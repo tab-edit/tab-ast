@@ -539,7 +539,7 @@ class FragmentCursor {
     get name() { return this.currentCursor.name; }
     get ranges() { return this.currentCursor.ranges; }
     get node() { return this.currentCursor.node; }
-    sourceSyntaxCursor() { return this.currentCursor.sourceSyntaxNodes(); }
+    sourceSyntaxNodes() { return this.currentCursor.sourceSyntaxNodes(); }
     getAncestors() { return this.currentCursor.getAncestors(); }
     firstChild() { return this.currentCursor.firstChild(); }
     lastChild() { return this.currentCursor.lastChild(); }
