@@ -68,7 +68,9 @@ class ResolvedASTNode {
     }
     get name() { return this.anchoredNode.name; }
     get ranges() {
-        return this.anchoredNode.ranges.map(rng => this.anchorFragment.from + rng);
+        if (!this._ranges)
+            this._ranges = this.anchoredNode.ranges.map(rng => this.anchorFragment.from + rng);
+        return this._ranges;
     }
     /**
      * returns the source syntax nodes that make up the ASTNode at the current cursor position.

@@ -57,8 +57,9 @@ declare class AnchoredSyntaxNode {
 declare class ResolvedASTNode {
     private anchoredNode;
     private anchorFragment;
-    constructor(anchoredNode: AnchoredASTNode, anchorFragment: TabFragment);
     get name(): string;
+    constructor(anchoredNode: AnchoredASTNode, anchorFragment: TabFragment);
+    private _ranges;
     get ranges(): number[];
     private _sourceSyntaxNodes;
     /**

@@ -71,13 +71,15 @@ export class AnchoredSyntaxNode {
  * Terrible name. Make sure to change
  */
 export class ResolvedASTNode {
+    get name() { return this.anchoredNode.name }
     constructor(
         private anchoredNode: AnchoredASTNode,
         private anchorFragment: TabFragment
     ) {}
-    get name() { return this.anchoredNode.name }
+    private _ranges: number[];
     get ranges() {
-        return this.anchoredNode.ranges.map(rng => this.anchorFragment.from+rng);
+        if (!this._ranges) this._ranges = this.anchoredNode.ranges.map(rng => this.anchorFragment.from+rng);
+        return this._ranges;
     }
 
     private _sourceSyntaxNodes:{[type:string]: AnchoredSyntaxNode[]};
