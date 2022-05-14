@@ -137,7 +137,7 @@ declare class TabTreeCursor implements Cursor<ResolvedASTNode> {
     static from(fragSet: TabFragment[], startingPos?: number): TabTreeCursor;
     get name(): string;
     get node(): ResolvedASTNode;
-    getAncestors(): Readonly<AnchoredASTNode>[];
+    getAncestors(): ResolvedASTNode[];
     firstChild(): boolean;
     lastChild(): boolean;
     parent(): boolean;
@@ -153,7 +153,7 @@ declare class FragmentCursor implements Cursor<AnchoredASTNode> {
     static from(nodeSet: AnchoredASTNode[]): FragmentCursor;
     get name(): string;
     get node(): AnchoredASTNode;
-    getAncestors(): Readonly<AnchoredASTNode>[];
+    getAncestors(): AnchoredASTNode[];
     firstChild(): boolean;
     lastChild(): boolean;
     parent(): boolean;
@@ -364,4 +364,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { AnchoredASTNode as ASTNode, ParseContext, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };

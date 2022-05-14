@@ -622,7 +622,9 @@ class TabTreeCursor {
     }
     get name() { return this.currentCursor.name; }
     get node() { return new ResolvedASTNode(this.currentCursor.node, this.fragSet[this.pointer]); }
-    getAncestors() { return this.currentCursor.getAncestors(); }
+    getAncestors() {
+        return this.currentCursor.getAncestors().map(node => new ResolvedASTNode(node, this.fragSet[this.pointer]));
+    }
     firstChild() { return this.currentCursor.firstChild(); }
     lastChild() { return this.currentCursor.lastChild(); }
     parent() { return this.currentCursor.parent(); }
@@ -664,7 +666,7 @@ class FragmentCursor {
     get name() { return this.nodeSet[this.pointer].name; }
     get node() { return this.nodeSet[this.pointer]; }
     getAncestors() {
-        return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
+        return this.ancestryTrace.map(idx => this.nodeSet[idx]);
     }
     firstChild() {
         if (this.nodeSet.length === 0)
@@ -1462,5 +1464,5 @@ class TabLanguageSupport {
     }
 }
 
-export { AnchoredASTNode as ASTNode, ParseContext, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map
