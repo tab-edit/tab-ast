@@ -28,7 +28,9 @@ export class TabTreeCursor implements Cursor<ResolvedASTNode> {
     }
     get name() { return this.currentCursor.name }
     get node() { return new ResolvedASTNode(this.currentCursor.node, this.fragSet[this.pointer]) }
-    getAncestors() { return this.currentCursor.getAncestors() }
+    getAncestors() {
+        return this.currentCursor.getAncestors().map(node => new ResolvedASTNode(node, this.fragSet[this.pointer]))
+    }
     firstChild() { return this.currentCursor.firstChild() }
     lastChild() { return this.currentCursor.lastChild() }
     parent() { return this.currentCursor.parent() }
@@ -71,7 +73,7 @@ export class FragmentCursor implements Cursor<AnchoredASTNode> {
     get node() { return this.nodeSet[this.pointer] }
     
     getAncestors() {
-        return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
+        return this.ancestryTrace.map(idx => this.nodeSet[idx]);
     }
 
     firstChild() {
