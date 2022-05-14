@@ -1,7 +1,7 @@
 import { EditorState } from "@codemirror/state";
 import { parser } from "parser-tablature";
-import { FragmentCursor } from "../src/tree/cursors";
-import { TabFragment } from "../src/tree/tab_fragment";
+import { FragmentCursor } from "../src/structure/cursors";
+import { TabFragment } from "../src/structure/fragment";
 
 
 

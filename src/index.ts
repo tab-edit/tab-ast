@@ -3,7 +3,8 @@ import { ChangeDesc, EditorState, Extension, Facet, StateEffect, StateField, Tra
 import { EditorView, logException, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { ChangedRange } from "@lezer/common";
 import { TabParser, PartialTabParse } from "./parsers/fragment_level_parser";
-import { TabFragment, TabTree } from "./tree/tab_fragment";
+import { TabFragment } from "./structure/fragment";
+import { TabTree } from "./structure/tree";
 export { TabParserImplement } from "./parsers/fragment_level_parser";
 
 export function defineTabLanguageFacet(baseData?: {[name: string]: any}) {
@@ -508,7 +509,7 @@ export class TabLanguageSupport {
     }
 }
 
-export { TabTree } from './tree/tab_fragment';
-export { ASTCursor, FragmentCursor, Cursor } from './tree/cursors';
-export { ASTNode } from './tree/nodes';
-export { SourceSyntaxNodeTypes } from "./tree/nodes";
+export { TabTree } from './structure/tree';
+export { TabTreeCursor } from './structure/cursors';
+export { AnchoredASTNode as ASTNode } from './structure/nodes';
+export { SourceSyntaxNodeTypes } from "./structure/nodes";

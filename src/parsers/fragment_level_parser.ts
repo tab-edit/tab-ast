@@ -1,7 +1,9 @@
 // TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { TabFragment, TabTree } from "../tree/tab_fragment";
+import { TabFragment } from "../structure/fragment";
+import { TabTree } from "../structure/tree";
+
 class Range {
     constructor(readonly from: number, readonly to: number) {}
 }
@@ -136,7 +138,7 @@ export class PartialTabParseImplement implements PartialTabParse {
             skipTo = rawSyntaxTree.cursor().to;
         } else if (cursor.from > this.parsedPos) {  // no node covers this.parsedPos (maybe it was skipped when parsing, like whitespace)
             skipTo = cursor.from;
-        } else if (cursor.name!==TabFragment.AnchorNode) {
+        } else if (cursor.name!==TabFragment.AnchorNodeType) {
             skipTo = cursor.to;
         }
 

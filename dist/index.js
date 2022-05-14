@@ -3,6 +3,9 @@ import { ViewPlugin, logException } from '@codemirror/view';
 import { ensureSyntaxTree } from '@codemirror/language';
 import objectHash from 'object-hash';
 
+/**
+ * enum values for syntax nodes from the tab-edit/parser-tablature package. (should probably be defined in that package instead.)
+ */
 var SourceSyntaxNodeTypes;
 (function (SourceSyntaxNodeTypes) {
     SourceSyntaxNodeTypes["Tablature"] = "Tablature";
@@ -31,21 +34,88 @@ var SourceSyntaxNodeTypes;
     SourceSyntaxNodeTypes["Modifier"] = "Modifier";
     SourceSyntaxNodeTypes["InvalidToken"] = "\u26A0";
 })(SourceSyntaxNodeTypes || (SourceSyntaxNodeTypes = {}));
-class ASTNode {
+/**
+* a wrapper class around the SyntaxNode object, but
+* whose ranges/positions are all relative to a given
+* anchor position.
+*/
+class AnchoredSyntaxNode {
+    constructor(node, anchorPos) {
+        this.node = node;
+        this.anchorPos = anchorPos;
+    }
+    get type() { return this.node.type; }
+    get name() { return this.node.name; }
+    get from() { return this.node.from - this.anchorPos; }
+    get to() { return this.node.to - this.anchorPos; }
+    getChild(type) {
+        return new AnchoredSyntaxNode(this.node.getChild(type), this.anchorPos);
+    }
+    getChildren(type) {
+        return this.node.getChildren(type).map((node) => new AnchoredSyntaxNode(node, this.anchorPos));
+    }
+    createOffsetCopy(offset) {
+        return new AnchoredSyntaxNode(this.node, this.anchorPos + offset);
+    }
+}
+/**
+ * Terrible name. Make sure to change
+ */
+class ResolvedASTNode {
+    constructor(anchoredNode, anchorFragment) {
+        this.anchoredNode = anchoredNode;
+        this.anchorFragment = anchorFragment;
+    }
+    get name() { return this.anchoredNode.name; }
+    get ranges() {
+        return this.anchoredNode.ranges.map(rng => this.anchorFragment.from + rng);
+    }
+    /**
+     * returns the source syntax nodes that make up the ASTNode at the current cursor position.
+     * Unlike in AnchoredASTNode.sourceSyntaxNodes or FragmentCursor.sourceSyntaxNodes(), the
+     * returned nodes are anchored to the start of the document, so their ranges will directly
+     * correspond to the position in the source text which they cover
+     * @returns
+     */
+    sourceSyntaxNodes() {
+        if (this._sourceSyntaxNodes)
+            return this._sourceSyntaxNodes;
+        const fragmentAnchoredSourceNode = this.anchoredNode.getSourceSyntaxNodes();
+        this._sourceSyntaxNodes = {};
+        Object.keys(fragmentAnchoredSourceNode).forEach((type) => {
+            this._sourceSyntaxNodes[type] = fragmentAnchoredSourceNode[type].map(node => {
+                return node.createOffsetCopy(this.anchorFragment.from);
+            });
+        });
+        return this._sourceSyntaxNodes;
+    }
+    /**
+     * Generates a hash for this node. This hash is unique for every node
+     * in the abstract syntax tree of the source text.
+     * @returns a string hash for the node
+     */
+    hash() { return objectHash([this.anchoredNode.hash(), this.anchorFragment.from]); }
+}
+/**
+ * ASTNode whose ranges are relative to an anchor position.
+ * (useful when reusing fragments at different positions in the
+ * text - we don't need to recompute the ranges of all its ASTNodes
+ * as the ranges are relative to whatever TabFragment they are in)
+ */
+class AnchoredASTNode {
     constructor(
-    /// mapping of SyntaxNode type => syntax nodes where the syntax nodes are the source
-    /// nodes of the parse tree from which the ASTNode is being built.
-    /// currently, once i lazily parse only once, i dispose of sourceNodes (set to null) for efficiency(TODO: i might remove this feature as it might not be a good idea to dispose)
-    sourceNodes, offset) {
+    /// The Syntax Node objects that make up this ASTNode, organized by type
+    sourceNodes, anchorPos) {
         this.sourceNodes = sourceNodes;
-        this.offset = offset;
+        this.anchorPos = anchorPos;
         // parse up-keep
         this.parsed = false;
-        // the length an ASTNode and all its children take up in their source array
+        /// the length that this node and all of its children take up in 
+        /// their source array when being parsed by the LinearParser
+        /// (ideally this logic should be represented in the LinearParser 
+        /// class somehow, not here)
         this._length = 1;
-        this.ranges = Uint16Array.from(this.computeRanges(sourceNodes, offset));
     }
-    get isSingleSpanNode() { return typeof this.getRootNodeTraverser === "function"; }
     get name() { return this.constructor.name; }
     get isParsed() { return this.parsed; }
     parse(sourceText) {
@@ -56,30 +126,46 @@ class ASTNode {
     }
     increaseLength(children) { this._length += children.length; }
     get length() { return this._length; }
-    computeRanges(sourceNodes, offset) {
+    get ranges() {
+        if (this._ranges)
+            return this._ranges;
         let rngs = [];
-        for (let name in sourceNodes) {
-            for (let node of sourceNodes[name]) {
-                rngs.push(node.from - offset);
-                rngs.push(node.to - offset);
+        for (let name in this.sourceNodes) {
+            for (let node of this.sourceNodes[name]) {
+                rngs.push(node.from - this.anchorPos);
+                rngs.push(node.to - this.anchorPos);
             }
         }
+        this._ranges = rngs;
         return rngs;
     }
     /**
-    * Generates a hash for the node. This hash is generated using the node's
-    * name, as well as the ranges the node covers relative to the offset
-    * initially provided in this class' constructor.
-    * Only safe to use when you know what you're doing. If you want to get a hash for a node
-    * in your TabTree, look at the FragmentCursor.nodeHash() function
-    * @returns a string hash for the node
-    */
-    hash() {
-        return objectHash([this.name, ...this.ranges]);
+     * Generates a list of anchored syntax nodes from which this
+     * AnchoredASTNode was parsed. This list is grouped by the syntax node types
+     * @returns a type-grouped list of AnchoredSyntaxNode objects
+     */
+    getSourceSyntaxNodes() {
+        if (this._sourceSyntaxNodes)
+            return this._sourceSyntaxNodes;
+        this._sourceSyntaxNodes = {};
+        Object.keys(this.sourceNodes).forEach((type) => {
+            this._sourceSyntaxNodes[type] = this.sourceNodes[type].map(node => {
+                return new AnchoredSyntaxNode(node, node.from - this.anchorPos);
+            });
+        });
+        return this._sourceSyntaxNodes;
     }
-    get sourceSyntaxNodes() { return this.sourceNodes; }
+    /**
+     * generates a hash for the AnchoredASTNode from its name and ranges
+     * @returns a string hash for the node
+     */
+    hash() {
+        if (!this._hash)
+            this._hash = objectHash([this.name, ...this.ranges]);
+        return this._hash;
+    }
 }
-class TabSegment extends ASTNode {
+class TabSegment extends AnchoredASTNode {
     createChildren(sourceText) {
         let modifiers = this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0].getChildren(SourceSyntaxNodeTypes.Modifier);
         let strings = [];
@@ -160,7 +246,7 @@ class TabSegment extends ASTNode {
             tabBlocks.push(new TabBlock({
                 [SourceSyntaxNodeTypes.Modifier]: blockModifiers[bI] || [],
                 [SourceSyntaxNodeTypes.TabString]: blocks[bI]
-            }, this.offset));
+            }, this.anchorPos));
         }
         return tabBlocks;
     }
@@ -168,12 +254,12 @@ class TabSegment extends ASTNode {
         return idx - sourceText.lineAt(idx).from;
     }
 }
-class TabBlock extends ASTNode {
+class TabBlock extends AnchoredASTNode {
     createChildren() {
         let result = [];
         let modifiers = this.sourceNodes[SourceSyntaxNodeTypes.Modifier];
         for (let mod of modifiers) {
-            result.push(Modifier.from(mod.name, { [mod.name]: [mod] }, this.offset));
+            result.push(Modifier.from(mod.name, { [mod.name]: [mod] }, this.anchorPos));
         }
         let strings = this.sourceNodes[SourceSyntaxNodeTypes.TabString];
         let measureLineNames = [];
@@ -182,7 +268,7 @@ class TabBlock extends ASTNode {
             // make sure multiplier is inserted as a child before all measures so it is traversed first
             let multiplier = string.getChild(SourceSyntaxNodeTypes.Multiplier);
             if (multiplier)
-                result.push(Modifier.from(multiplier.name, { [multiplier.name]: [multiplier] }, this.offset));
+                result.push(Modifier.from(multiplier.name, { [multiplier.name]: [multiplier] }, this.anchorPos));
             let mlineName = string.getChild(SourceSyntaxNodeTypes.MeasureLineName);
             if (mlineName)
                 measureLineNames.push(mlineName);
@@ -193,14 +279,14 @@ class TabBlock extends ASTNode {
                 measures[i].push(measurelines[i]);
             }
         }
-        result.push(new LineNaming({ [SourceSyntaxNodeTypes.MeasureLineName]: measureLineNames }, this.offset));
+        result.push(new LineNaming({ [SourceSyntaxNodeTypes.MeasureLineName]: measureLineNames }, this.anchorPos));
         for (let i = 0; i < measures.length; i++) {
-            result.push(new Measure({ [SourceSyntaxNodeTypes.MeasureLine]: measures[i] }, this.offset));
+            result.push(new Measure({ [SourceSyntaxNodeTypes.MeasureLine]: measures[i] }, this.anchorPos));
         }
         return result;
     }
 }
-class Measure extends ASTNode {
+class Measure extends AnchoredASTNode {
     createChildren(sourceText) {
         var _a;
         let lines = this.sourceNodes[SourceSyntaxNodeTypes.MeasureLine];
@@ -292,7 +378,7 @@ class Measure extends ASTNode {
         } while (!hasGroupedAllSounds);
         let result = [];
         for (let sound of sounds) {
-            result.push(new Sound({ MultiType: sound }, this.offset));
+            result.push(new Sound({ MultiType: sound }, this.anchorPos));
         }
         return result;
     }
@@ -300,31 +386,31 @@ class Measure extends ASTNode {
         return sourceText.slice(from, to).toString().replace(/\s/g, '').length;
     }
 }
-class Sound extends ASTNode {
+class Sound extends AnchoredASTNode {
     createChildren() {
         let components = this.sourceNodes.MultiType; // TODO: MultiType does not correspond to any node in the Syntax Tree. Think of a better way to transfer this data
         let result = [];
         for (let component of components) {
             if (component.type.is(SourceSyntaxNodeTypes.Note))
-                result.push(Note.from(component.name, { [component.name]: [component] }, this.offset));
+                result.push(Note.from(component.name, { [component.name]: [component] }, this.anchorPos));
             else if (component.type.is(SourceSyntaxNodeTypes.NoteDecorator))
-                result.push(NoteDecorator.from(component.name, { [component.name]: [component] }, this.offset));
+                result.push(NoteDecorator.from(component.name, { [component.name]: [component] }, this.anchorPos));
             else if (component.type.is(SourceSyntaxNodeTypes.NoteConnector))
-                result.push(NoteConnector.from(component.name, { [component.name]: [component] }, this.offset));
+                result.push(NoteConnector.from(component.name, { [component.name]: [component] }, this.anchorPos));
         }
         return result;
     }
 }
-class MeasureLineName extends ASTNode {
+class MeasureLineName extends AnchoredASTNode {
     createChildren() { return []; }
 }
-class LineNaming extends ASTNode {
+class LineNaming extends AnchoredASTNode {
     createChildren() {
         let names = this.sourceNodes[SourceSyntaxNodeTypes.MeasureLineName];
-        return names.map((name) => new MeasureLineName({ [SourceSyntaxNodeTypes.MeasureLineName]: [name] }, this.offset));
+        return names.map((name) => new MeasureLineName({ [SourceSyntaxNodeTypes.MeasureLineName]: [name] }, this.anchorPos));
     }
 }
-class NoteConnector extends ASTNode {
+class NoteConnector extends AnchoredASTNode {
     // the raw parser parses note connectors recursively, so 5h3p2 would
     // parse as Hammer(5, Pull(3,2)), making the hammeron encompass also the fret 2
     // but the hammer relationship only connects 5 and 3, so we override the range computation to
@@ -367,7 +453,7 @@ class NoteConnector extends ASTNode {
         } while (cursor.nextSibling());
         return notes;
     }
-    createChildren() { return this.notes.map((node) => Note.from(node.name, { [node.name]: [node] }, this.offset)); }
+    createChildren() { return this.notes.map((node) => Note.from(node.name, { [node.name]: [node] }, this.anchorPos)); }
     static isNoteConnector(name) { return name in [SourceSyntaxNodeTypes.Hammer, SourceSyntaxNodeTypes.Pull, SourceSyntaxNodeTypes.Slide]; }
     static from(type, sourceNodes, offset) {
         switch (type) {
@@ -387,12 +473,12 @@ class Pull extends NoteConnector {
 class Slide extends NoteConnector {
     getType() { return SourceSyntaxNodeTypes.Slide; }
 }
-class NoteDecorator extends ASTNode {
+class NoteDecorator extends AnchoredASTNode {
     createChildren() {
         let note = this.sourceNodes[this.getType()][0].getChild(SourceSyntaxNodeTypes.Note);
         if (!note)
             return [];
-        return [Note.from(note.name, { [note.name]: [note] }, this.offset)];
+        return [Note.from(note.name, { [note.name]: [note] }, this.anchorPos)];
     }
     static from(type, sourceNodes, offset) {
         switch (type) {
@@ -408,7 +494,7 @@ class Grace extends NoteDecorator {
 class Harmonic extends NoteDecorator {
     getType() { return SourceSyntaxNodeTypes.Harmonic; }
 }
-class Note extends ASTNode {
+class Note extends AnchoredASTNode {
     createChildren() { return []; }
     static from(type, sourceNodes, offset) {
         switch (type) {
@@ -421,7 +507,7 @@ class Fret extends Note {
     getType() { return SourceSyntaxNodeTypes.Fret; }
 }
 // modifiers
-class Modifier extends ASTNode {
+class Modifier extends AnchoredASTNode {
     createChildren() {
         return [];
     }
@@ -501,7 +587,7 @@ class LinearParser {
             if (node.name !== Measure.name)
                 continue;
             for (let i = 1; i < node.ranges.length; i += 2) {
-                hasMeasureline = hasMeasureline || this.sourceText.slice(node.offset + node.ranges[i - 1], node.offset + node.ranges[i]).toString().replace(/\s/g, '').length !== 0;
+                hasMeasureline = hasMeasureline || this.sourceText.slice(node.anchorPos + node.ranges[i - 1], node.anchorPos + node.ranges[i]).toString().replace(/\s/g, '').length !== 0;
                 if (hasMeasureline)
                     break outer;
             }
@@ -523,23 +609,19 @@ class LPNode {
     }
 }
 
-class FragmentCursor {
-    constructor(fragSet, pointer = 0, currentCursor) {
+class TabTreeCursor {
+    constructor(fragSet, pointer = 0) {
         this.fragSet = fragSet;
         this.pointer = pointer;
-        this.currentCursor = currentCursor;
-        if (!this.currentCursor)
-            this.currentCursor = fragSet[pointer].cursor;
+        this.currentCursor = fragSet[pointer].cursor;
     }
     static from(fragSet, startingPos) {
         if (!fragSet || !fragSet.length)
             return null;
-        return new FragmentCursor(fragSet, startingPos || 0);
+        return new TabTreeCursor(fragSet, startingPos || 0);
     }
     get name() { return this.currentCursor.name; }
-    get ranges() { return this.currentCursor.ranges; }
-    get node() { return this.currentCursor.node; }
-    sourceSyntaxNodes() { return this.currentCursor.sourceSyntaxNodes(); }
+    get node() { return new ResolvedASTNode(this.currentCursor.node, this.fragSet[this.pointer]); }
     getAncestors() { return this.currentCursor.getAncestors(); }
     firstChild() { return this.currentCursor.firstChild(); }
     lastChild() { return this.currentCursor.lastChild(); }
@@ -560,16 +642,13 @@ class FragmentCursor {
         }
         return this.currentCursor.nextSibling();
     }
-    fork() { return new FragmentCursor(this.fragSet, this.pointer, this.currentCursor); }
-    /**
-     * Generates a hash for the current node that the cursor is pointing to. This hash
-     * is unique for every node in the fragment set, given that each fragment in the fragment
-     * set covers a different range of the source document.
-     * @returns a string hash for the node
-     */
-    nodeHash() { return objectHash([this.node.hash(), this.fragSet[this.pointer].from]); }
+    fork() {
+        const copy = new TabTreeCursor(this.fragSet, this.pointer);
+        copy.currentCursor = this.currentCursor;
+        return copy;
+    }
 }
-class ASTCursor {
+class FragmentCursor {
     constructor(
     // might want to change this to an array of numbers.
     nodeSet, pointer = 0, ancestryTrace = []) {
@@ -580,12 +659,10 @@ class ASTCursor {
     static from(nodeSet) {
         if (!nodeSet || !nodeSet.length)
             return null;
-        return new ASTCursor(nodeSet, 0, []);
+        return new FragmentCursor(nodeSet, 0, []);
     }
     get name() { return this.nodeSet[this.pointer].name; }
-    get ranges() { return Array.from(this.nodeSet[this.pointer].ranges); }
     get node() { return this.nodeSet[this.pointer]; }
-    sourceSyntaxNodes() { return this.nodeSet[this.pointer].sourceSyntaxNodes; }
     getAncestors() {
         return this.ancestryTrace.map(idx => Object.freeze(this.nodeSet[idx]));
     }
@@ -639,7 +716,7 @@ class ASTCursor {
         return true;
     }
     fork() {
-        return new ASTCursor(this.nodeSet, this.pointer, this.ancestryTrace);
+        return new FragmentCursor(this.nodeSet, this.pointer, this.ancestryTrace);
     }
     printTree() {
         let str = this.printTreeRecursiveHelper();
@@ -665,99 +742,49 @@ class ASTCursor {
         return str;
     }
 }
-ASTCursor.dud = new ASTCursor([]);
-// Don't know when we will use this, but it is for the user to 
-// be able to access and traverse the raw syntax nodes while 
-// still maintaining the fact that all nodes' positions are 
-// relative to the TabFragment in which they are contained.
-class AnchoredSyntaxCursor {
-    constructor(startingNode, anchorOffset) {
-        this.anchorOffset = anchorOffset;
-        this.cursor = startingNode.cursor();
-    }
-    get type() { return this.cursor.type; }
-    get name() { return this.cursor.name; }
-    get from() { return this.cursor.from - this.anchorOffset; }
-    get to() { return this.cursor.to - this.anchorOffset; }
-    get node() { return new OffsetSyntaxNode(this.cursor.node, this.anchorOffset); }
-    firstChild() { return this.cursor.firstChild(); }
-    lastChild() { return this.cursor.lastChild(); }
-    enter(pos, side) {
-        return this.cursor.enter(pos, side);
-    }
-    parent() {
-        if (this.name === TabFragment.AnchorNode)
-            return false;
-        return this.cursor.parent();
-    }
-    nextSibling() {
-        if (this.name === TabFragment.AnchorNode)
-            return false;
-        return this.cursor.nextSibling();
-    }
-    prevSibling() {
-        if (this.name === TabFragment.AnchorNode)
-            return false;
-        return this.cursor.nextSibling();
-    }
-    fork() {
-        return new AnchoredSyntaxCursor(this.cursor.node, this.anchorOffset);
-    }
-}
-class OffsetSyntaxNode {
-    constructor(node, offset) {
-        this.node = node;
-        this.offset = offset;
-    }
-    get type() { return this.node.type; }
-    get name() { return this.node.name; }
-    get from() { return this.node.from - this.offset; }
-    get to() { return this.node.to - this.offset; }
-    cursor() { return new AnchoredSyntaxCursor(this.node, this.offset); }
-    getChild(type) {
-        return new OffsetSyntaxNode(this.node.getChild(type), this.offset);
-    }
-    getChildren(type) {
-        return this.node.getChildren(type).map((node) => new OffsetSyntaxNode(node, this.offset));
-    }
-}
+FragmentCursor.dud = new FragmentCursor([]);
 
 // TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
 class TabFragment {
-    constructor(from, to, rootNode, editorState, linearParser) {
+    constructor(from, to, rootNode, sourceText) {
         this.from = from;
         this.to = to;
-        this.linearParser = linearParser;
-        this.isBlankFragment = false;
-        if (linearParser)
+        this.isBlankFragment = !rootNode;
+        if (this.isBlankFragment)
             return;
-        if (!rootNode) {
-            this.isBlankFragment = true;
-            return;
-        }
-        if (rootNode.name !== TabFragment.AnchorNode)
-            throw new Error(`Expected ${TabFragment.AnchorNode} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
-        let initialContent = new TabSegment({ [TabFragment.AnchorNode]: [new OffsetSyntaxNode(rootNode, this.from)] }, this.from);
-        this.linearParser = new LinearParser(initialContent, editorState.doc);
+        if (rootNode.name !== TabFragment.AnchorNodeType)
+            throw new Error(`Expected ${TabFragment.AnchorNodeType} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
+        let initialContent = new TabSegment({ [TabFragment.AnchorNodeType]: [rootNode] }, this.from);
+        this.linearParser = new LinearParser(initialContent, sourceText);
     }
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
-    static get AnchorNode() { return SourceSyntaxNodeTypes.TabSegment; }
+    static get AnchorNodeType() { return SourceSyntaxNodeTypes.TabSegment; }
     advance() {
         if (this.isBlankFragment)
-            return ASTCursor.dud;
+            return FragmentCursor.dud;
         let nodeSet = this.linearParser.advance();
-        return nodeSet ? (this.linearParser.isValid ? ASTCursor.from(nodeSet) : ASTCursor.dud) : null;
+        return nodeSet ? (this.linearParser.isValid ? FragmentCursor.from(nodeSet) : FragmentCursor.dud) : null;
     }
-    /// starts parsing this TabFragment from the raw SyntaxNode. this is made to be 
-    /// incremental to prevent blocking when there are a lot of Tab Blocks on the same line
+    /**
+     * Creates an unparsed TabFragment object that can be incrementally parsed
+     * by repeatedly calling the TabFragment.advance() method.
+     * @param node source node from which parsing begins
+     * @param editorState the EditorState from which the sourceNode was obtained
+     * @returns an unparsed TabFragment object
+     */
     static startParse(node, editorState) {
-        if (node.name !== TabFragment.AnchorNode)
+        if (node.name !== TabFragment.AnchorNodeType)
             return null;
-        return new TabFragment(node.from, node.to, node, editorState);
+        return new TabFragment(node.from, node.to, node, editorState.doc);
     }
-    /// Apply a set of edits to an array of fragments, removing
-    /// fragments as necessary to remove edited ranges, and
-    /// adjusting offsets for fragments that moved.
+    /**
+     * Applies a set of edits to an array of fragments, reusing unaffected fragments,
+     * removing fragments overlapping with edits, or creating new fragments with
+     * adjusted positions to replace fragments which have moved as a result of edits.
+     * @param fragments a set of TabFragment objects
+     * @param changes a set of ChangedRanges representing edits
+     * @returns a new set of fragments
+     */
     static applyChanges(fragments, changes) {
         if (!changes.length)
             return fragments;
@@ -768,19 +795,26 @@ class TabFragment {
             // TODO: be careful here with the <=. test to make sure that it should be <= and not just <.
             while (nextF && (!nextC || nextF.from <= nextC.toA)) {
                 if (!nextC || nextF.to <= nextC.fromA)
-                    result.push(nextF.offset(-off));
+                    result.push(nextF.createOffsetCopy(-off));
                 nextF = fI < fragments.length ? fragments[fI++] : null;
             }
             off = nextC ? nextC.toA - nextC.toB : 0;
         }
         return result;
     }
-    offset(delta) {
-        return new TabFragment(this.from + delta, this.to + delta, null, null, this.linearParser);
+    createOffsetCopy(offset) {
+        const copy = new TabFragment(this.from + offset, this.to + offset, null, null);
+        copy.linearParser = this.linearParser;
+        return copy;
     }
-    /// Create a set of fragments from a freshly parsed tree, or update
-    /// an existing set of fragments by replacing the ones that overlap
-    /// with a tree with content from the new tree.
+    /**
+     * Create a set of fragments from a freshly parsed tree, or update
+     * an existing set of fragments by replacing the ones that overlap
+     * with a tree with content from the new tree.
+     * @param tree a freshly parsed tree
+     * @param fragments a set of fragments
+     * @returns fragment set produced by merging the tree's fragment set with the provided fragment set
+     */
     static addTree(tree, fragments = []) {
         let result = [...tree.getFragments()];
         for (let f of fragments)
@@ -800,6 +834,7 @@ class TabFragment {
     }
     get isParsed() { return this.isBlankFragment || this.linearParser.isDone; }
 }
+
 class TabTree {
     constructor(fragments) {
         this.fragments = fragments;
@@ -807,20 +842,12 @@ class TabTree {
         this.to = fragments[fragments.length - 1] ? fragments[fragments.length - 1].to : 0;
     }
     get cursor() {
-        return FragmentCursor.from(this.fragments);
+        return TabTreeCursor.from(this.fragments);
     }
     static createBlankTree(from, to) {
         return new TabTree([TabFragment.createBlankFragment(from, to)]);
     }
     getFragments() { return this.fragments; }
-    toString() {
-        let str = "TabTree(";
-        for (let fragment of this.fragments) {
-            str += fragment.toString();
-        }
-        str += ")";
-        return str;
-    }
     /// Iterate over the tree and its children in an in-order fashion
     /// calling the spec.enter() function whenever a node is entered, and 
     /// spec.leave() when we leave a node. When enter returns false, that 
@@ -829,10 +856,9 @@ class TabTree {
         this.iterateHelper(spec, this.cursor);
     }
     iterateHelper(spec, cursor) {
-        const getCursor = () => cursor.fork(); // watch out, may be a source of memory leak if bad actor uses setInterval for example in their enter() or leave() function
         let explore;
         do {
-            explore = spec.enter(cursor.node, getCursor) === false ? false : true;
+            explore = spec.enter(cursor.name, cursor.fork()) === false ? false : true;
             if (explore === false)
                 continue;
             if (cursor.firstChild()) {
@@ -840,8 +866,16 @@ class TabTree {
                 cursor.parent();
             }
             if (spec.leave)
-                spec.leave(cursor.node, getCursor);
+                spec.leave(cursor.name, cursor.fork());
         } while (cursor.nextSibling());
+    }
+    toString() {
+        let str = "TabTree(";
+        for (let fragment of this.fragments) {
+            str += fragment.toString();
+        }
+        str += ")";
+        return str;
     }
 }
 TabTree.empty = new TabTree([]);
@@ -930,7 +964,7 @@ class PartialTabParseImplement {
         else if (cursor.from > this.parsedPos) { // no node covers this.parsedPos (maybe it was skipped when parsing, like whitespace)
             skipTo = cursor.from;
         }
-        else if (cursor.name !== TabFragment.AnchorNode) {
+        else if (cursor.name !== TabFragment.AnchorNodeType) {
             skipTo = cursor.to;
         }
         if (skipTo) {
@@ -1428,5 +1462,5 @@ class TabLanguageSupport {
     }
 }
 
-export { ASTCursor, ASTNode, FragmentCursor, ParseContext, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { AnchoredASTNode as ASTNode, ParseContext, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map

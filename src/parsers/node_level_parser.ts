@@ -1,5 +1,5 @@
 import { Text } from "@codemirror/state";
-import { ASTNode, Measure } from "../tree/nodes";
+import { AnchoredASTNode, Measure } from "../structure/nodes";
 
 /// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked-list-like structure
 // the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
@@ -14,10 +14,10 @@ export class LinearParser {
     // To do this, you will have to modify the ASTNode.increaseLength() function to account 
     // for the fact that different nodes can have different ranges.
     // not sure if better or worse for time/memory efficiency
-    private nodeSet: ASTNode[] = [];
+    private nodeSet: AnchoredASTNode[] = [];
     private head: LPNode | null = null;
     constructor(
-        initialNode: ASTNode,
+        initialNode: AnchoredASTNode,
         /// The index of all the parsed content will be relative to this offset
         /// This is usually the index of the source TabFragment, to make 
         /// for efficient relocation of TabFragments
@@ -27,7 +27,7 @@ export class LinearParser {
     }
 
     private ancestryStack: number[] = [];
-    advance(): ASTNode[] | null {
+    advance(): AnchoredASTNode[] | null {
         if (!this.head) return this.nodeSet;
         let content = this.head.getNextContent();
         if (!content) {
@@ -57,7 +57,7 @@ export class LinearParser {
         outer: for (let node of nodeSet) {
             if (node.name!==Measure.name) continue;
             for (let i=1; i<node.ranges.length; i+=2) {
-                hasMeasureline = hasMeasureline || this.sourceText.slice(node.offset+node.ranges[i-1], node.offset+node.ranges[i]).toString().replace(/\s/g, '').length !== 0
+                hasMeasureline = hasMeasureline || this.sourceText.slice(node.anchorPos+node.ranges[i-1], node.anchorPos+node.ranges[i]).toString().replace(/\s/g, '').length !== 0
                 if (hasMeasureline) break outer;
             }
         }
@@ -69,11 +69,11 @@ export class LinearParser {
 class LPNode {
     private contentPointer: number = 0;
     constructor(
-        private content: ASTNode[], 
+        private content: AnchoredASTNode[], 
         public next: LPNode | null
     ) {}
 
-    getNextContent(): ASTNode | null {
+    getNextContent(): AnchoredASTNode | null {
         if (this.contentPointer >= this.content.length) return null;
         return this.content[this.contentPointer++];
     }
