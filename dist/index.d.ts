@@ -149,6 +149,7 @@ declare class ResolvedASTNode {
     nextSibling(): ResolvedASTNode;
     prevSibling(): ResolvedASTNode;
     parent(): ResolvedASTNode;
+    getAncestors(): ResolvedASTNode[];
 }
 /**
  * ASTNode whose ranges are relative to an anchor position.

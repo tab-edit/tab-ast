@@ -156,6 +156,15 @@ export class ResolvedASTNode {
         if (!cursor.parent()) return null;
         return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
     }
+
+    getAncestors() {
+        const cursor = this.fragmentCursor.fork();
+        const ancestors:ResolvedASTNode[] = [];
+        while (cursor.parent()) {
+            ancestors.push(cursor.node);
+        }
+        return ancestors.reverse();
+    }
 }
 
 

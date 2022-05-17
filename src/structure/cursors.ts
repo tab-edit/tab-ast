@@ -61,16 +61,14 @@ export class FragmentCursor implements Cursor<ResolvedASTNode> {
     constructor(readonly fragment: TabFragment) {}
     get name() { return this.fragment.nodeSet[this.pointer].name }
     get node() { 
+        // TODO: could improve efficiency by implementing some sort of caching. This would
+        // snowball because the ResolvedASTNode class caches a bunch of values, so
+        // performance benefits might be more than meets the eye
         return new ResolvedASTNode(this.fragment.nodeSet[this.pointer], this);
     }
 
     getAncestors() {
-        const cursor = this.fork();
-        const ancestors:ResolvedASTNode[] = [];
-        while (cursor.parent()) {
-            ancestors.push(cursor.node);
-        }
-        return ancestors.reverse();
+        return this.node.getAncestors();
     }
 
     firstChild() {
