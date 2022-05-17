@@ -59,17 +59,31 @@ class AnchoredSyntaxNode {
     }
 }
 /**
- * Terrible name. Make sure to change
+ * Interface through which external clients interact with an ASTNode.
+ * To be able to support fragment reuse (for incremental parsing),
+ * AnchoredASTNode's range values are relative to the fragment in which
+ * they reside. A ResolvedASTNode object on the other hand maps an
+ * AnchoredASTNode's relative range value onto an absolute value, which
+ * maps directly onto the source text.
  */
 class ResolvedASTNode {
-    constructor(anchoredNode, anchorFragment) {
+    constructor(
+    /**
+     * Node to be resolved
+     */
+    anchoredNode, 
+    /**
+     * A fragment cursor pointing to the provided anchoredNode
+     */
+    fragmentCursor) {
         this.anchoredNode = anchoredNode;
-        this.anchorFragment = anchorFragment;
+        this.fragmentCursor = fragmentCursor;
+        this.fragmentCursor = fragmentCursor.fork();
     }
     get name() { return this.anchoredNode.name; }
     get ranges() {
         if (!this._ranges)
-            this._ranges = this.anchoredNode.ranges.map(rng => this.anchorFragment.from + rng);
+            this._ranges = this.anchoredNode.ranges.map(rng => this.fragmentCursor.fragment.from + rng);
         return this._ranges;
     }
     /**
@@ -86,7 +100,7 @@ class ResolvedASTNode {
         this._sourceSyntaxNodes = {};
         Object.keys(fragmentAnchoredSourceNode).forEach((type) => {
             this._sourceSyntaxNodes[type] = fragmentAnchoredSourceNode[type].map(node => {
-                return node.createOffsetCopy(this.anchorFragment.from);
+                return node.createOffsetCopy(this.fragmentCursor.fragment.from);
             });
         });
         return this._sourceSyntaxNodes;
@@ -96,7 +110,45 @@ class ResolvedASTNode {
      * in the abstract syntax tree of the source text.
      * @returns a string hash for the node
      */
-    hash() { return objectHash([this.anchoredNode.hash(), this.anchorFragment.from]); }
+    hash() {
+        if (!this._hash)
+            this._hash = objectHash([this.anchoredNode.hash(), this.fragmentCursor.fragment.from]);
+        return this._hash;
+    }
+    firstChild() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.firstChild())
+            return null;
+        return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
+    }
+    getChildren() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.firstChild())
+            return [];
+        const children = [];
+        do {
+            children.push(new ResolvedASTNode(cursor.node.anchoredNode, cursor));
+        } while (cursor.nextSibling());
+        return children;
+    }
+    nextSibling() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.nextSibling())
+            return null;
+        return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
+    }
+    prevSibling() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.prevSibling())
+            return null;
+        return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
+    }
+    parent() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.parent())
+            return null;
+        return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
+    }
 }
 /**
  * ASTNode whose ranges are relative to an anchor position.
@@ -623,10 +675,8 @@ class TabTreeCursor {
         return new TabTreeCursor(fragSet, startingPos || 0);
     }
     get name() { return this.currentCursor.name; }
-    get node() { return new ResolvedASTNode(this.currentCursor.node, this.fragSet[this.pointer]); }
-    getAncestors() {
-        return this.currentCursor.getAncestors().map(node => new ResolvedASTNode(node, this.fragSet[this.pointer]));
-    }
+    get node() { return this.currentCursor.node; }
+    getAncestors() { return this.currentCursor; }
     firstChild() { return this.currentCursor.firstChild(); }
     lastChild() { return this.currentCursor.lastChild(); }
     parent() { return this.currentCursor.parent(); }
@@ -653,28 +703,28 @@ class TabTreeCursor {
     }
 }
 class FragmentCursor {
-    constructor(
-    // might want to change this to an array of numbers.
-    nodeSet, pointer = 0, ancestryTrace = []) {
-        this.nodeSet = nodeSet;
-        this.pointer = pointer;
-        this.ancestryTrace = ancestryTrace;
+    constructor(fragment) {
+        this.fragment = fragment;
+        this.ancestryTrace = [];
+        this.pointer = 0;
     }
-    static from(nodeSet) {
-        if (!nodeSet || !nodeSet.length)
-            return null;
-        return new FragmentCursor(nodeSet, 0, []);
+    get name() { return this.fragment.nodeSet[this.pointer].name; }
+    get node() {
+        return new ResolvedASTNode(this.fragment.nodeSet[this.pointer], this);
     }
-    get name() { return this.nodeSet[this.pointer].name; }
-    get node() { return this.nodeSet[this.pointer]; }
     getAncestors() {
-        return this.ancestryTrace.map(idx => this.nodeSet[idx]);
+        const cursor = this.fork();
+        const ancestors = [];
+        while (cursor.parent()) {
+            ancestors.push(cursor.node);
+        }
+        return ancestors.reverse();
     }
     firstChild() {
-        if (this.nodeSet.length === 0)
+        if (this.fragment.nodeSet.length === 0)
             return false;
         let currentPointer = this.pointer;
-        if (this.nodeSet[this.pointer].length === 1)
+        if (this.fragment.nodeSet[this.pointer].length === 1)
             return false;
         this.pointer += 1;
         this.ancestryTrace.push(currentPointer);
@@ -687,7 +737,7 @@ class FragmentCursor {
         return true;
     }
     parent() {
-        if (this.nodeSet.length === 0)
+        if (this.fragment.nodeSet.length === 0)
             return false;
         if (this.name === TabFragment.name || this.ancestryTrace.length === 0)
             return false;
@@ -713,23 +763,26 @@ class FragmentCursor {
         if (!this.ancestryTrace.length)
             return false;
         let parentPointer = this.ancestryTrace[this.ancestryTrace.length - 1];
-        let nextInorder = this.pointer + this.nodeSet[this.pointer].length;
-        if (parentPointer + this.nodeSet[parentPointer].length <= nextInorder)
+        let nextInorder = this.pointer + this.fragment.nodeSet[this.pointer].length;
+        if (parentPointer + this.fragment.nodeSet[parentPointer].length <= nextInorder)
             return false;
         this.pointer = nextInorder;
         return true;
     }
     fork() {
-        return new FragmentCursor(this.nodeSet, this.pointer, this.ancestryTrace);
+        const copy = new FragmentCursor(this.fragment);
+        copy.pointer = this.pointer;
+        copy.ancestryTrace = this.ancestryTrace;
+        return copy;
     }
     printTree() {
         let str = this.printTreeRecursiveHelper();
         return str;
     }
     printTreeRecursiveHelper() {
-        if (this.nodeSet.length == 0)
+        if (this.fragment.nodeSet.length == 0)
             return "";
-        let str = `${this.nodeSet[this.pointer].name}[${this.nodeSet[this.pointer].ranges.toString()}]`;
+        let str = `${this.fragment.nodeSet[this.pointer].name}[${this.fragment.nodeSet[this.pointer].ranges.toString()}]`;
         if (this.firstChild())
             str += "(";
         else
@@ -746,7 +799,7 @@ class FragmentCursor {
         return str;
     }
 }
-FragmentCursor.dud = new FragmentCursor([]);
+FragmentCursor.dud = new FragmentCursor(TabFragment.createBlankFragment(0, 0));
 
 // TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
 class TabFragment {
@@ -763,11 +816,12 @@ class TabFragment {
     }
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
     static get AnchorNodeType() { return SourceSyntaxNodeTypes.TabSegment; }
+    get nodeSet() { return this._nodeSet; }
     advance() {
         if (this.isBlankFragment)
             return FragmentCursor.dud;
-        let nodeSet = this.linearParser.advance();
-        return nodeSet ? (this.linearParser.isValid ? FragmentCursor.from(nodeSet) : FragmentCursor.dud) : null;
+        this._nodeSet = this.linearParser.advance();
+        return this.nodeSet ? (this.linearParser.isValid ? new FragmentCursor(this) : FragmentCursor.dud) : null;
     }
     /**
      * Creates an unparsed TabFragment object that can be incrementally parsed

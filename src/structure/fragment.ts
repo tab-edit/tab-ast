@@ -1,6 +1,6 @@
 // TODO: credit https://github.com/lezer-parser/common/blob/main/src/parse.ts
 import { EditorState, Text } from "@codemirror/state";
-import { SourceSyntaxNodeTypes, TabSegment } from "./nodes";
+import { AnchoredASTNode, SourceSyntaxNodeTypes, TabSegment } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 import { TabTree } from "./tree";
@@ -26,10 +26,13 @@ export class TabFragment {
         this.linearParser = new LinearParser(initialContent, sourceText);
     }
 
+    private _nodeSet:AnchoredASTNode[]; 
+    get nodeSet() { return this._nodeSet }
     advance(): FragmentCursor | null {
         if (this.isBlankFragment) return FragmentCursor.dud;
-        let nodeSet = this.linearParser!.advance();
-        return nodeSet ? (this.linearParser!.isValid ? FragmentCursor.from(nodeSet) : FragmentCursor.dud) : null;
+        this._nodeSet = this.linearParser!.advance();
+
+        return this.nodeSet ? (this.linearParser!.isValid ? new FragmentCursor(this) : FragmentCursor.dud) : null;
     }
 
     

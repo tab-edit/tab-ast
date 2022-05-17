@@ -4,6 +4,51 @@ import { EditorView } from '@codemirror/view';
 import * as _lezer_common from '@lezer/common';
 import { SyntaxNode, ChangedRange } from '@lezer/common';
 
+interface Cursor<T> {
+    name: string;
+    node: Readonly<T>;
+    firstChild(): boolean;
+    lastChild(): boolean;
+    parent(): boolean;
+    prevSibling(): boolean;
+    nextSibling(): boolean;
+    fork(): Cursor<T>;
+}
+declare class TabTreeCursor implements Cursor<ResolvedASTNode> {
+    private fragSet;
+    private pointer;
+    private currentCursor;
+    private constructor();
+    static from(fragSet: TabFragment[], startingPos?: number): TabTreeCursor;
+    get name(): string;
+    get node(): ResolvedASTNode;
+    getAncestors(): FragmentCursor;
+    firstChild(): boolean;
+    lastChild(): boolean;
+    parent(): boolean;
+    prevSibling(): boolean;
+    nextSibling(): boolean;
+    fork(): TabTreeCursor;
+}
+declare class FragmentCursor implements Cursor<ResolvedASTNode> {
+    readonly fragment: TabFragment;
+    private ancestryTrace;
+    private pointer;
+    constructor(fragment: TabFragment);
+    get name(): string;
+    get node(): ResolvedASTNode;
+    getAncestors(): ResolvedASTNode[];
+    firstChild(): boolean;
+    lastChild(): boolean;
+    parent(): boolean;
+    prevSibling(): boolean;
+    nextSibling(): boolean;
+    fork(): FragmentCursor;
+    static readonly dud: FragmentCursor;
+    printTree(): string;
+    private printTreeRecursiveHelper;
+}
+
 /**
  * enum values for syntax nodes from the tab-edit/parser-tablature package. (should probably be defined in that package instead.)
  */
@@ -52,16 +97,36 @@ declare class AnchoredSyntaxNode {
     createOffsetCopy(offset: number): AnchoredSyntaxNode;
 }
 /**
- * Terrible name. Make sure to change
+ * Interface through which external clients interact with an ASTNode.
+ * To be able to support fragment reuse (for incremental parsing),
+ * AnchoredASTNode's range values are relative to the fragment in which
+ * they reside. A ResolvedASTNode object on the other hand maps an
+ * AnchoredASTNode's relative range value onto an absolute value, which
+ * maps directly onto the source text.
  */
 declare class ResolvedASTNode {
+    /**
+     * Node to be resolved
+     */
     private anchoredNode;
-    private anchorFragment;
+    /**
+     * A fragment cursor pointing to the provided anchoredNode
+     */
+    private fragmentCursor;
     get name(): string;
-    constructor(anchoredNode: AnchoredASTNode, anchorFragment: TabFragment);
+    constructor(
+    /**
+     * Node to be resolved
+     */
+    anchoredNode: AnchoredASTNode, 
+    /**
+     * A fragment cursor pointing to the provided anchoredNode
+     */
+    fragmentCursor: FragmentCursor);
     private _ranges;
-    get ranges(): number[];
     private _sourceSyntaxNodes;
+    private _hash;
+    get ranges(): number[];
     /**
      * returns the source syntax nodes that make up the ASTNode at the current cursor position.
      * Unlike in AnchoredASTNode.sourceSyntaxNodes or FragmentCursor.sourceSyntaxNodes(), the
@@ -78,6 +143,11 @@ declare class ResolvedASTNode {
      * @returns a string hash for the node
      */
     hash(): string;
+    firstChild(): ResolvedASTNode;
+    getChildren(): ResolvedASTNode[];
+    nextSibling(): ResolvedASTNode;
+    prevSibling(): ResolvedASTNode;
+    parent(): ResolvedASTNode;
 }
 /**
  * ASTNode whose ranges are relative to an anchor position.
@@ -120,52 +190,6 @@ declare abstract class AnchoredASTNode {
     hash(): string;
 }
 
-interface Cursor<T> {
-    name: string;
-    node: Readonly<T>;
-    firstChild(): boolean;
-    lastChild(): boolean;
-    parent(): boolean;
-    prevSibling(): boolean;
-    nextSibling(): boolean;
-    fork(): Cursor<T>;
-}
-declare class TabTreeCursor implements Cursor<ResolvedASTNode> {
-    private fragSet;
-    private pointer;
-    private currentCursor;
-    private constructor();
-    static from(fragSet: TabFragment[], startingPos?: number): TabTreeCursor;
-    get name(): string;
-    get node(): ResolvedASTNode;
-    getAncestors(): ResolvedASTNode[];
-    firstChild(): boolean;
-    lastChild(): boolean;
-    parent(): boolean;
-    prevSibling(): boolean;
-    nextSibling(): boolean;
-    fork(): TabTreeCursor;
-}
-declare class FragmentCursor implements Cursor<AnchoredASTNode> {
-    private nodeSet;
-    private pointer;
-    private ancestryTrace;
-    private constructor();
-    static from(nodeSet: AnchoredASTNode[]): FragmentCursor;
-    get name(): string;
-    get node(): AnchoredASTNode;
-    getAncestors(): AnchoredASTNode[];
-    firstChild(): boolean;
-    lastChild(): boolean;
-    parent(): boolean;
-    prevSibling(): boolean;
-    nextSibling(): boolean;
-    fork(): FragmentCursor;
-    static readonly dud: FragmentCursor;
-    printTree(): string;
-    private printTreeRecursiveHelper;
-}
-
 declare class TabTree {
     readonly fragments: TabFragment[];
     readonly from: number;
@@ -193,6 +217,8 @@ declare class TabFragment {
     readonly isBlankFragment: boolean;
     private linearParser?;
     private constructor();
+    private _nodeSet;
+    get nodeSet(): AnchoredASTNode[];
     advance(): FragmentCursor | null;
     /**
      * Creates an unparsed TabFragment object that can be incrementally parsed

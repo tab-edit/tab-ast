@@ -1,6 +1,7 @@
 import { Text } from "@codemirror/state";
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import objectHash from "object-hash";
+import { FragmentCursor } from "./cursors";
 import { TabFragment } from "./fragment";
 
 /**
@@ -39,7 +40,6 @@ export enum SourceSyntaxNodeTypes {
     InvalidToken = "⚠"
 }
 
-
  /**
  * a wrapper class around the SyntaxNode object, but 
  * whose ranges/positions are all relative to a given 
@@ -68,21 +68,36 @@ export class AnchoredSyntaxNode {
 }
 
 /**
- * Terrible name. Make sure to change
+ * Interface through which external clients interact with an ASTNode.
+ * To be able to support fragment reuse (for incremental parsing),
+ * AnchoredASTNode's range values are relative to the fragment in which
+ * they reside. A ResolvedASTNode object on the other hand maps an
+ * AnchoredASTNode's relative range value onto an absolute value, which
+ * maps directly onto the source text.
  */
 export class ResolvedASTNode {
     get name() { return this.anchoredNode.name }
     constructor(
+        /**
+         * Node to be resolved 
+         */
         private anchoredNode: AnchoredASTNode,
-        private anchorFragment: TabFragment
-    ) {}
-    private _ranges: number[];
-    get ranges() {
-        if (!this._ranges) this._ranges = this.anchoredNode.ranges.map(rng => this.anchorFragment.from+rng);
-        return this._ranges;
+        /**
+         * A fragment cursor pointing to the provided anchoredNode
+         */
+        private fragmentCursor: FragmentCursor
+    ) {
+        this.fragmentCursor = fragmentCursor.fork();
     }
 
+    // caches
+    private _ranges: number[];
     private _sourceSyntaxNodes:{[type:string]: AnchoredSyntaxNode[]};
+    private _hash: string;
+    get ranges() {
+        if (!this._ranges) this._ranges = this.anchoredNode.ranges.map(rng => this.fragmentCursor.fragment.from+rng);
+        return this._ranges;
+    }
     /**
      * returns the source syntax nodes that make up the ASTNode at the current cursor position.
      * Unlike in AnchoredASTNode.sourceSyntaxNodes or FragmentCursor.sourceSyntaxNodes(), the
@@ -96,7 +111,7 @@ export class ResolvedASTNode {
         this._sourceSyntaxNodes = {}
         Object.keys(fragmentAnchoredSourceNode).forEach((type) => {
             this._sourceSyntaxNodes[type] = fragmentAnchoredSourceNode[type].map(node => {
-                return node.createOffsetCopy(this.anchorFragment.from);
+                return node.createOffsetCopy(this.fragmentCursor.fragment.from);
             })
         })
         return this._sourceSyntaxNodes;
@@ -107,7 +122,40 @@ export class ResolvedASTNode {
      * in the abstract syntax tree of the source text.
      * @returns a string hash for the node
      */
-    hash() { return objectHash([this.anchoredNode.hash(), this.anchorFragment.from]) }
+    hash() { 
+        if (!this._hash) this._hash = objectHash([this.anchoredNode.hash(), this.fragmentCursor.fragment.from])
+        return this._hash;
+    }
+
+    firstChild() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.firstChild()) return null;
+        return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
+    }
+    getChildren(): ResolvedASTNode[] {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.firstChild()) return []
+        const children: ResolvedASTNode[] = [];
+        do {
+            children.push(new ResolvedASTNode(cursor.node.anchoredNode, cursor));
+        } while (cursor.nextSibling());
+        return children;
+    }
+    nextSibling() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.nextSibling()) return null;
+        return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
+    }
+    prevSibling() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.prevSibling()) return null;
+        return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
+    }
+    parent() {
+        const cursor = this.fragmentCursor.fork();
+        if (!cursor.parent()) return null;
+        return new ResolvedASTNode(cursor.node.anchoredNode, cursor);
+    }
 }
 
 
