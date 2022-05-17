@@ -89,7 +89,7 @@ export class ResolvedASTNode {
     ) {
         this.fragmentCursor = fragmentCursor.fork();
     }
-
+    cursor() { this.fragmentCursor.fork(); }
     // caches
     private _ranges: number[];
     private _sourceSyntaxNodes:{[type:string]: AnchoredSyntaxNode[]};

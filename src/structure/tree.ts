@@ -1,6 +1,6 @@
 import { TabTreeCursor } from "./cursors";
 import { TabFragment } from "./fragment";
-import { AnchoredASTNode } from "./nodes";
+import { AnchoredASTNode, ResolvedASTNode } from "./nodes";
 
 export class TabTree {
     readonly from: number;
@@ -31,13 +31,13 @@ export class TabTree {
     private iterateHelper(spec: IteratorSpec, cursor: TabTreeCursor) {
         let explore: boolean | undefined;
         do {
-            explore = spec.enter(cursor.name, cursor.fork())===false ? false : true;
+            explore = spec.enter(cursor.node)===false ? false : true;
             if (explore===false) continue;
             if (cursor.firstChild()) {
                 this.iterateHelper(spec, cursor);
                 cursor.parent();
             }
-            if (spec.leave) spec.leave(cursor.name, cursor.fork());
+            if (spec.leave) spec.leave(cursor.node);
         }while (cursor.nextSibling());
     }
 
@@ -56,12 +56,10 @@ export class TabTree {
 
 type IteratorSpec = {
     enter: (
-        name: string,
-        cursor: TabTreeCursor
+        node: ResolvedASTNode
     ) => false | void,
     leave?: (
-        name: string,
-        cursor: TabTreeCursor
+        node: ResolvedASTNode
     ) => void,
     from?: number,
     to?: number

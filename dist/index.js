@@ -81,6 +81,7 @@ class ResolvedASTNode {
         this.fragmentCursor = fragmentCursor.fork();
     }
     get name() { return this.anchoredNode.name; }
+    cursor() { this.fragmentCursor.fork(); }
     get ranges() {
         if (!this._ranges)
             this._ranges = this.anchoredNode.ranges.map(rng => this.fragmentCursor.fragment.from + rng);
@@ -916,7 +917,7 @@ class TabTree {
     iterateHelper(spec, cursor) {
         let explore;
         do {
-            explore = spec.enter(cursor.name, cursor.fork()) === false ? false : true;
+            explore = spec.enter(cursor.node) === false ? false : true;
             if (explore === false)
                 continue;
             if (cursor.firstChild()) {
@@ -924,7 +925,7 @@ class TabTree {
                 cursor.parent();
             }
             if (spec.leave)
-                spec.leave(cursor.name, cursor.fork());
+                spec.leave(cursor.node);
         } while (cursor.nextSibling());
     }
     toString() {

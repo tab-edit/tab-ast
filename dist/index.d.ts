@@ -123,6 +123,7 @@ declare class ResolvedASTNode {
      * A fragment cursor pointing to the provided anchoredNode
      */
     fragmentCursor: FragmentCursor);
+    cursor(): void;
     private _ranges;
     private _sourceSyntaxNodes;
     private _hash;
@@ -204,8 +205,8 @@ declare class TabTree {
     toString(): string;
 }
 declare type IteratorSpec = {
-    enter: (name: string, cursor: TabTreeCursor) => false | void;
-    leave?: (name: string, cursor: TabTreeCursor) => void;
+    enter: (node: ResolvedASTNode) => false | void;
+    leave?: (node: ResolvedASTNode) => void;
     from?: number;
     to?: number;
 };
