@@ -608,3 +608,24 @@ abstract class Modifier extends AnchoredASTNode {
 class Repeat extends Modifier { getType() { return SourceSyntaxNodeTypes.Repeat } }
 class TimeSignature extends Modifier { getType() { return SourceSyntaxNodeTypes.TimeSignature } }
 class Multiplier extends Modifier { getType(): string { return SourceSyntaxNodeTypes.Multiplier } }
+
+
+
+export const ASTNodeTypes = {
+    TabSegment: TabSegment.name,
+    TabBlock: TabBlock.name,
+    Measure: Measure.name,
+    Sound: Sound.name,
+    MeasureLineName: MeasureLineName.name,
+    LineNaming: LineNaming.name,
+    Hammer: Hammer.name,
+    Pull: Pull.name,
+    Slide: Slide.name,
+    Grace: Grace.name,
+    Harmonic: Harmonic.name,
+    Fret: Fret.name,
+    Repeat: Repeat.name,
+    TimeSignature: TimeSignature.name,
+    Multiplier: Multiplier.name
+}
+Object.freeze(ASTNodeTypes);

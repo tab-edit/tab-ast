@@ -512,4 +512,4 @@ export class TabLanguageSupport {
 export { TabTree } from './structure/tree';
 export { TabTreeCursor } from './structure/cursors';
 export { ResolvedASTNode } from './structure/nodes';
-export { SourceSyntaxNodeTypes } from "./structure/nodes";
+export { SourceSyntaxNodeTypes, ASTNodeTypes } from "./structure/nodes";

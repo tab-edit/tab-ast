@@ -191,6 +191,23 @@ declare abstract class AnchoredASTNode {
      */
     hash(): string;
 }
+declare const ASTNodeTypes: {
+    TabSegment: string;
+    TabBlock: string;
+    Measure: string;
+    Sound: string;
+    MeasureLineName: string;
+    LineNaming: string;
+    Hammer: string;
+    Pull: string;
+    Slide: string;
+    Grace: string;
+    Harmonic: string;
+    Fret: string;
+    Repeat: string;
+    TimeSignature: string;
+    Multiplier: string;
+};
 
 declare class TabTree {
     readonly fragments: TabFragment[];
@@ -393,4 +410,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTNodeTypes, ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
