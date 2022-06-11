@@ -1,6 +1,6 @@
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { TabFragment } from "./fragment";
-import { AnchoredSyntaxNode, ResolvedASTNode } from "./nodes";
+import { SourceNode, ResolvedASTNode } from "./nodes";
 
 export interface Cursor<T> {
     name: string;
@@ -161,7 +161,7 @@ export class FragmentCursor implements Cursor<ResolvedASTNode> {
  * in the constructor (you can only explore the sub-tree rooted atthe provided
  * starting node, not its siblings or ancestors)
  */
-export class AnchoredSyntaxCursor implements Cursor<AnchoredSyntaxNode> {
+export class AnchoredSyntaxCursor implements Cursor<SourceNode> {
     private cursor: TreeCursor;
     constructor(
         private anchorNode: SyntaxNode,
@@ -174,7 +174,7 @@ export class AnchoredSyntaxCursor implements Cursor<AnchoredSyntaxNode> {
     get name() { return this.cursor.name }
     get from() { return this.cursor.from - this.anchorOffset }
     get to() { return this.cursor.to - this.anchorOffset }
-    get node() { return new AnchoredSyntaxNode(this.cursor.node, this.anchorOffset); }
+    get node() { return new SourceNode(this.cursor.node, this.anchorOffset); }
     firstChild() { return this.cursor.firstChild() }
     lastChild() { return this.cursor.lastChild() }
     enter(

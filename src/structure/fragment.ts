@@ -1,6 +1,6 @@
 // TODO: credit https://github.com/lezer-parser/common/blob/main/src/parse.ts
 import { EditorState, Text } from "@codemirror/state";
-import { AnchoredASTNode, SourceSyntaxNodeTypes, TabSegment } from "./nodes";
+import { AnchoredASTNode, SourceNodeTypes, TabSegment } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 import { TabTree } from "./tree";
@@ -10,7 +10,7 @@ import { FragmentCursor } from "./cursors";
 
 export class TabFragment {
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
-    static get AnchorNodeType() { return SourceSyntaxNodeTypes.TabSegment }
+    static get AnchorNodeType() { return SourceNodeTypes.TabSegment }
     readonly isBlankFragment: boolean;
     private linearParser?: LinearParser
     private constructor(
