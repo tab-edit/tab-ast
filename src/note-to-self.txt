@@ -1,4 +1,0 @@
-Guiding principle when working on the abstract syntax tree structure:
-The abstract syntax tree should be semantically consistent with music tablature notation, 
-but should contain as little semantic detail as possible. 
-The semantic details should be handled by the tab-edit/tab-state package.

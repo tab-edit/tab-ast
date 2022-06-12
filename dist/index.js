@@ -592,24 +592,6 @@ class TimeSignature extends Modifier {
 class Multiplier extends Modifier {
     getType() { return SourceSyntaxNodeTypes.Multiplier; }
 }
-const ASTNodeTypes = {
-    TabSegment: TabSegment.name,
-    TabBlock: TabBlock.name,
-    Measure: Measure.name,
-    Sound: Sound.name,
-    MeasureLineName: MeasureLineName.name,
-    LineNaming: LineNaming.name,
-    Hammer: Hammer.name,
-    Pull: Pull.name,
-    Slide: Slide.name,
-    Grace: Grace.name,
-    Harmonic: Harmonic.name,
-    Fret: Fret.name,
-    Repeat: Repeat.name,
-    TimeSignature: TimeSignature.name,
-    Multiplier: Multiplier.name
-};
-Object.freeze(ASTNodeTypes);
 
 /// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked-list-like structure
 // the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
@@ -1545,5 +1527,5 @@ class TabLanguageSupport {
     }
 }
 
-export { ASTNodeTypes, ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map
