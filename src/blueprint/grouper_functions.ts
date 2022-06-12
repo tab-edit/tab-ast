@@ -1,6 +1,5 @@
 import { Text } from "@codemirror/state";
-import { gutterLineClass } from "@codemirror/view";
-import { SourceNode, SourceNodeTypes as S } from "./nodes";
+import { SourceNode, SourceNodeTypes as S, ASTNodeTypes as A } from "../structure/nodes";
 type LinearRange = {from:number, to:number}
 
 /**
@@ -12,15 +11,18 @@ type LinearRange = {from:number, to:number}
  * 
  * e.g.
  * NOTE: this example only makes sense if you're viewing it with a monospaced font!!!
+ * 
  * this:
- *   |--a-| |-pivot2-|
- * |-----pivot1-----| |-pivot3-|
- *   |----b---| |---c---|
+ * 
+ *   |--a-| |-pivot2-|  
+ * |-----pivot1-----| |-pivot3-|    
+ *   |----b---| |---c---|   
  * 
  * becomes three groups:
- * |--a-|                       |-pivot2-|
- * |-----pivot1-----|                               |-pivot3|
- * |----b---|                   |---c---|
+ * 
+ * |--a-|                       |-pivot2-|  
+ * |-----pivot1-----|                               |-pivot3|   
+ * |----b---|                   |---c---|   
  * 
  * pivot1 is the first pivot because it is closest to the start of the line.
  * it overlaps with a and b, so the three form a group. they are not considered
@@ -130,9 +132,14 @@ export function createSequentialGrouping(nodesGroupedByLine: SourceNode[][], sou
  * Components whose notes have the same non-whitespace distance from the start of their measure line
  * belong to the same sound.
  * 
- * e.g.
- *    |-   ---g7----|        when normalized, becomes this:     |----g7----|
- * |-----8--- -|                                                |-----8----|
+ * e.g.  
+ *    |-   ---g7--3--4-|        when normalized, becomes this:     |----g7--3--4-|  
+ * |-----8-- - --6-|                                               |-----8-----6-|  
+ * 
+ * and it produces these three sound groupings:
+ * 
+ *      |g7|    |3|     |4|
+ *      |8|     | |     |6|
  * 
  * These two components "g7"(grace-7) and "8" belong to the same sound because
  * their notes "7" and "8" both have the same non-whitespace distance from
@@ -218,42 +225,64 @@ export function createSoundGrouping(componentsGroupedByLine: SourceNode[][], mea
  *      |h|   |7|   | |   | |   |s|   |h|   | |   |7|   | |
  * 
  * Note: We are allowing for multiple consecutive connector groups, even though it is semantically invalid.
- * It will be marked as an error by the linter. we are only focused on creating an accurate syntax treewill be caught by the linter.
+ * It will be marked as an error by the linter. we are only focused on creating an accurate syntax tree.
  * 
  * How it works is we first group the sounds using the `createSoundGrouping` function.
  * Next we go through each sound and for each sound, we extract the connectors that appear right before a note in
  * that sound and those connectors form (one or more) connector groups that are ordered before the sound.
  * @param connectorsGroupedByLine an array of "Connector" node groups where each node group is a group of nodes that live on the same line, arranged in the order they appear on that line.
- * @param soundGroups An array of 
+ * @param soundGroups An array of "Component" node groups where each node in a group belong to the same sound. It is the result of running the `createSoundGrouping` grouper function.
  * @param source_text the source text from which these nodes were parsed
  */
 export function createConnectorSoundOrdering(connectorsGroupedByLine: SourceNode[][], soundGroups: SourceNode[][], source_text: Text) {
-    // mapping from sound => connector-groups-right-before-sound
-    const connectorGroupsBefore: Map<SourceNode, SourceNode[][]> = new Map();
-    const danglingConnectorGroups: SourceNode[][] = [];
+    const lineToConnectorList: Map<number, SourceNode[]> = new Map();
+    const lineToConnectorPointer: Map<number, number> = new Map();
     for (const connectors of connectorsGroupedByLine) {
-        const lineNum = connectors[0] ? source_text.lineAt(connectors[0]?.from).number : 0;
-        for (let cI; cI<connectors.length; cI++) {
-            const connector = connectors[cI];
-            const connectorLine = getLine(connector);
-            let soundRightAfterConnector: SourceNode[] = null;
-            
-            soundIterator:
-            for (const sound of soundGroups) {
-                for (const note of sound) {
-                    const noteLine = getLine(note);
-                    if (noteLine > connectorLine) {
-                        // the connector does not connect to any note in this sound
-                        continue soundIterator;
-                    } else if (noteLine===connectorLine) continue;
+        if (connectors.length===0) continue;
+        const line = lineNum(connectors[0].from, source_text);
+        lineToConnectorList.set(line, connectors);
+        lineToConnectorPointer.set(line, 0);
+    }
 
-                }
+    const connectorSoundOrdering: {type: A.ConnectorGroup|A.Sound, group: SourceNode[]}[] = []
+    for (const sound of soundGroups) {
+        let connectorGroupsBeforeSound: SourceNode[][] = [];
+        for (const component of sound) {
+            const componentLine = lineNum(component.from, source_text);
+            const connectors = lineToConnectorList.get(componentLine);
+            let pointer = lineToConnectorPointer.get(componentLine);
+            if (!connectors || !connectors[pointer]) continue;
+
+            for (let groupIdx=0; groupIdx < connectors.length-pointer; pointer++, groupIdx++) {
+                const connector = connectors[pointer];
+
+                if (connector.from >= component.from) break;
+                if (!connectorGroupsBeforeSound[groupIdx]) connectorGroupsBeforeSound[groupIdx] = [connector];
+                else connectorGroupsBeforeSound[groupIdx].push(connector);
             }
-        }
-        for (const connector of lineOfConnectors) {
 
+            lineToConnectorPointer.set(componentLine, pointer);
+        }
+        connectorSoundOrdering.concat(connectorGroupsBeforeSound.map(group => ({type: A.ConnectorGroup, group})))
+        connectorSoundOrdering.push({type: A.Sound, group: sound})
+    }
+
+    // handle dangling connectors
+    const danglingConnectors: SourceNode[][] = [];
+    for (const connectors of connectorsGroupedByLine) {
+        if (connectors.length===0) continue;
+        const line = lineNum(connectors[0].from, source_text);
+        let pointer = lineToConnectorPointer.get(line);
+
+        for (let groupIdx=0; groupIdx < connectors.length-pointer; pointer++, groupIdx++) {
+            const connector = connectors[pointer];
+            if (!danglingConnectors[groupIdx]) danglingConnectors[groupIdx] = [connector];
+            else danglingConnectors[groupIdx].push(connector);
         }
     }
+    connectorSoundOrdering.concat(danglingConnectors.map(group => ({type: A.ConnectorGroup, group})))
+
+    return connectorSoundOrdering;
 }
 
 function columnDistance(index:number, source_text: Text) {
@@ -262,4 +291,8 @@ function columnDistance(index:number, source_text: Text) {
 
 function nonWhitespaceDistance(from: number, to: number, source_text: Text) {
     return source_text.slice(from, to).toString().replace(/\s/g, '').length;
+}
+
+function lineNum(index: number, source_text: Text) {
+    return source_text.lineAt(index).number;
 }

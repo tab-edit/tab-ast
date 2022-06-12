@@ -1,5 +1,5 @@
 import { Text } from "@codemirror/state"
-import { NodeBlueprint } from "./blueprint"
+import { NodeBlueprint } from "../blueprint/blueprint"
 import { SourceNode } from "./nodes"
 
 export type GroupedNodeList = {[nodeType: string]: SourceNode[]}

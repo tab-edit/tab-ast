@@ -48,11 +48,35 @@ declare class FragmentCursor implements Cursor<ResolvedASTNode> {
     printTree(): string;
     private printTreeRecursiveHelper;
 }
+/**
+ * Creates a cursor for SyntaxNodes which are anchored to the node provided
+ * in the constructor (you can only explore the sub-tree rooted atthe provided
+ * starting node, not its siblings or ancestors)
+ */
+declare class AnchoredSyntaxCursor implements Cursor<SourceNode> {
+    private anchorNode;
+    private anchorOffset;
+    private cursor;
+    constructor(anchorNode: SyntaxNode, anchorOffset: number);
+    get type(): _lezer_common.NodeType;
+    get name(): string;
+    get from(): number;
+    get to(): number;
+    get node(): SourceNode;
+    firstChild(): boolean;
+    lastChild(): boolean;
+    enter(pos: number, side: -1 | 0 | 1): boolean;
+    parent(): boolean;
+    nextSibling(): boolean;
+    prevSibling(): boolean;
+    fork(): AnchoredSyntaxCursor;
+    private cursorAtAnchor;
+}
 
 /**
  * enum values for syntax nodes from the tab-edit/parser-tablature package. (should probably be defined in that package instead.)
  */
-declare enum SourceSyntaxNodeTypes {
+declare enum SourceNodeTypes {
     Tablature = "Tablature",
     TabSegment = "TabSegment",
     TabSegmentLine = "TabSegmentLine",
@@ -70,6 +94,8 @@ declare enum SourceSyntaxNodeTypes {
     Harmonic = "Harmonic",
     Grace = "Frace",
     Comment = "Comment",
+    Component = "Component",
+    Connector = "Connector",
     RepeatLine = "RepeatLine",
     Repeat = "Repeat",
     Multiplier = "Multiplier",
@@ -79,12 +105,32 @@ declare enum SourceSyntaxNodeTypes {
     Modifier = "Modifier",
     InvalidToken = "\u26A0"
 }
+declare enum ASTNodeTypes {
+    TabSegment = "TabSegment",
+    TabBlock = "TabBlock",
+    Measure = "Measure",
+    Sound = "Sound",
+    MeasureLineName = "MeasureLineName",
+    LineNaming = "LineNaming",
+    Hammer = "Hammer",
+    Pull = "Pull",
+    Slide = "Slide",
+    Grace = "Grace",
+    Harmonic = "Harmonic",
+    Fret = "Fret",
+    Repeat = "Repeat",
+    TimeSignature = "TimeSignature",
+    Multiplier = "Multiplier",
+    ConnectorGroup = "ConnectorGroup",
+    Component = "Component",
+    Connector = "Connector"
+}
 /**
 * a wrapper class around the SyntaxNode object, but
 * whose ranges/positions are all relative to a given
 * anchor position.
 */
-declare class AnchoredSyntaxNode {
+declare class SourceNode {
     private node;
     private anchorPos;
     constructor(node: SyntaxNode, anchorPos: number);
@@ -92,9 +138,10 @@ declare class AnchoredSyntaxNode {
     get name(): string;
     get from(): number;
     get to(): number;
-    getChild(type: string | number): AnchoredSyntaxNode;
-    getChildren(type: string | number): AnchoredSyntaxNode[];
-    createOffsetCopy(offset: number): AnchoredSyntaxNode;
+    getChild(type: string | number): SourceNode;
+    getChildren(type: string | number): SourceNode[];
+    createOffsetCopy(offset: number): SourceNode;
+    get cursor(): AnchoredSyntaxCursor;
 }
 /**
  * Interface through which external clients interact with an ASTNode.
@@ -136,7 +183,7 @@ declare class ResolvedASTNode {
      * @returns
      */
     sourceSyntaxNodes(): {
-        [type: string]: AnchoredSyntaxNode[];
+        [type: string]: SourceNode[];
     };
     /**
      * Generates a hash for this node. This hash is unique for every node
@@ -182,7 +229,7 @@ declare abstract class AnchoredASTNode {
      * @returns a type-grouped list of AnchoredSyntaxNode objects
      */
     getSourceSyntaxNodes(): {
-        [type: string]: AnchoredSyntaxNode[];
+        [type: string]: SourceNode[];
     };
     private _hash;
     /**
@@ -191,23 +238,6 @@ declare abstract class AnchoredASTNode {
      */
     hash(): string;
 }
-declare const ASTNodeTypes: {
-    TabSegment: string;
-    TabBlock: string;
-    Measure: string;
-    Sound: string;
-    MeasureLineName: string;
-    LineNaming: string;
-    Hammer: string;
-    Pull: string;
-    Slide: string;
-    Grace: string;
-    Harmonic: string;
-    Fret: string;
-    Repeat: string;
-    TimeSignature: string;
-    Multiplier: string;
-};
 
 declare class TabTree {
     readonly fragments: TabFragment[];
@@ -232,7 +262,7 @@ declare type IteratorSpec = {
 declare class TabFragment {
     readonly from: number;
     readonly to: number;
-    static get AnchorNodeType(): SourceSyntaxNodeTypes;
+    static get AnchorNodeType(): SourceNodeTypes;
     readonly isBlankFragment: boolean;
     private linearParser?;
     private constructor();
@@ -302,6 +332,46 @@ interface PartialTabParse {
     readonly stoppedAt: number | null;
     getFragments(): TabFragment[];
 }
+
+declare type GroupedNodeList = {
+    [nodeType: string]: SourceNode[];
+};
+declare class ASTNode {
+    readonly name: string;
+    readonly classList: string[];
+    private sourceNodes;
+    constructor(name: string, classList: string[], sourceNodes: GroupedNodeList);
+}
+declare class NodeGenerator {
+    private node_blueprint;
+    readonly source_text: Text;
+    constructor(node_blueprint: NodeBlueprint, source_text: Text);
+    /**
+     * Constructs an ASTNode from a SourceNode object using the blueprint
+     * @param sourceNode source
+     * @returns an ASTNode object, or null if the sourceNode type does not have an entry in the blueprint.
+     */
+    generateNode(sourceNode: SourceNode): ASTNode | null;
+    /**
+     * Creates an ASTNode with the properties specified.
+     * @param name the name of the node to be built
+     * @param sourceNodes the sourceNodes from which this node is to be derived.
+     * @returns an ASTNode object, or null if the blueprint does not have an entry for this node name.
+     */
+    buildNode(name: string, sourceNodes: GroupedNodeList): ASTNode | null;
+}
+
+declare type NodeBlueprint = {
+    anchors: Set<string>;
+    blueprint: {
+        [nodeName: string]: {
+            sourceNodeTypes: SourceNodeTypes[];
+            classList?: string[];
+            group?(sourceNodes: GroupedNodeList, generator: NodeGenerator): ASTNode[];
+        };
+    };
+};
+declare const blueprint: NodeBlueprint;
 
 declare function defineTabLanguageFacet(baseData?: {
     [name: string]: any;
@@ -410,4 +480,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { ASTNodeTypes, ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTNodeTypes, ParseContext, ResolvedASTNode, SourceNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, blueprint, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };

@@ -6,6 +6,7 @@ import { TabParser, PartialTabParse } from "./parsers/fragment_level_parser";
 import { TabFragment } from "./structure/fragment";
 import { TabTree } from "./structure/tree";
 export { TabParserImplement } from "./parsers/fragment_level_parser";
+export { blueprint } from "./blueprint/blueprint";
 
 export function defineTabLanguageFacet(baseData?: {[name: string]: any}) {
     return Facet.define<{[name: string]: any}>({

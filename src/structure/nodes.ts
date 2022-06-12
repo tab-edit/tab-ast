@@ -27,6 +27,8 @@ export enum SourceNodeTypes {
     Harmonic = "Harmonic",
     Grace = "Frace",
     Comment = "Comment",
+    Component = "Component",
+    Connector = "Connector",
 
     RepeatLine = "RepeatLine",
     Repeat = "Repeat",
@@ -38,6 +40,27 @@ export enum SourceNodeTypes {
     Modifier = "Modifier",
     
     InvalidToken = "⚠"
+}
+
+export enum ASTNodeTypes {
+    TabSegment = "TabSegment",
+    TabBlock = "TabBlock",
+    Measure = "Measure",
+    Sound = "Sound",
+    MeasureLineName = "MeasureLineName",
+    LineNaming = "LineNaming",
+    Hammer = "Hammer",
+    Pull = "Pull",
+    Slide = "Slide",
+    Grace = "Grace",
+    Harmonic = "Harmonic",
+    Fret = "Fret",
+    Repeat = "Repeat",
+    TimeSignature = "TimeSignature",
+    Multiplier = "Multiplier",
+    ConnectorGroup = "ConnectorGroup",
+    Component = "Component",
+    Connector = "Connector"
 }
 
  /**
@@ -613,21 +636,3 @@ class TimeSignature extends Modifier { getType() { return SourceNodeTypes.TimeSi
 class Multiplier extends Modifier { getType(): string { return SourceNodeTypes.Multiplier } }
 
 
-
-export enum ASTNodeTypes {
-    TabSegment = "TabSegment",
-    TabBlock = "TabBlock",
-    Measure = "Measure",
-    Sound = "Sound",
-    MeasureLineName = "MeasureLineName",
-    LineNaming = "LineNaming",
-    Hammer = "Hammer",
-    Pull = "Pull",
-    Slide = "Slide",
-    Grace = "Grace",
-    Harmonic = "Harmonic",
-    Fret = "Fret",
-    Repeat = "Repeat",
-    TimeSignature = "TimeSignature",
-    Multiplier = "Multiplier"
-}

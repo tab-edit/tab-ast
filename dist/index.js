@@ -3,43 +3,420 @@ import { ViewPlugin, logException } from '@codemirror/view';
 import { ensureSyntaxTree } from '@codemirror/language';
 import objectHash from 'object-hash';
 
+/// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked-list-like structure
+// the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
+// init:      [_rootNode_]
+// advance(): [rootNode, _rootNodeChild1, rootNodeChild2, rootNodeChild3..._]
+// advance(): [rootNode, rootNodeChild1, _rootNodeChild1Child1, rootNodeChild1Child2, ..._, rootNodeChild2, rootNodeChild3...]
+// ...
+// This is done using a singly-linked list to make it more efficient than performing array insert operations.
+class LinearParser {
+    constructor(initialNode, 
+    /// The index of all the parsed content will be relative to this offset
+    /// This is usually the index of the source TabFragment, to make 
+    /// for efficient relocation of TabFragments
+    sourceText) {
+        this.sourceText = sourceText;
+        // TODO: you might want to change this later to a Uint16array with the following format:
+        // [node1typeID, length, rangeLen, ranges..., node2typeID, ...]
+        // To do this, you will have to modify the ASTNode.increaseLength() function to account 
+        // for the fact that different nodes can have different ranges.
+        // not sure if better or worse for time/memory efficiency
+        this.nodeSet = [];
+        this.head = null;
+        this.ancestryStack = [];
+        this.cachedIsValid = null;
+        this.head = new LPNode([initialNode], null);
+    }
+    advance() {
+        if (!this.head)
+            return this.nodeSet;
+        let content = this.head.getNextContent();
+        if (!content) {
+            this.head = this.head.next;
+            this.ancestryStack.pop();
+            return null;
+        }
+        this.nodeSet.push(content);
+        this.ancestryStack.push(this.nodeSet.length - 1);
+        let children = content.parse(this.sourceText);
+        for (let ancestor of this.ancestryStack) {
+            this.nodeSet[ancestor].increaseLength(children);
+        }
+        this.head = new LPNode(children, this.head);
+        return null;
+    }
+    get isDone() { return this.head == null; }
+    get isValid() {
+        if (this.cachedIsValid !== null)
+            return this.cachedIsValid;
+        if (!this.isDone)
+            return false;
+        let nodeSet = this.advance();
+        if (!nodeSet)
+            return true; //this should never be the case cuz we've finished parsing, but just to be sure...
+        let hasMeasureline = false;
+        outer: for (let node of nodeSet) {
+            if (node.name !== Measure.name)
+                continue;
+            for (let i = 1; i < node.ranges.length; i += 2) {
+                hasMeasureline = hasMeasureline || this.sourceText.slice(node.anchorPos + node.ranges[i - 1], node.anchorPos + node.ranges[i]).toString().replace(/\s/g, '').length !== 0;
+                if (hasMeasureline)
+                    break outer;
+            }
+        }
+        this.cachedIsValid = hasMeasureline;
+        return this.cachedIsValid;
+    }
+}
+class LPNode {
+    constructor(content, next) {
+        this.content = content;
+        this.next = next;
+        this.contentPointer = 0;
+    }
+    getNextContent() {
+        if (this.contentPointer >= this.content.length)
+            return null;
+        return this.content[this.contentPointer++];
+    }
+}
+
+// TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
+class TabFragment {
+    constructor(from, to, rootNode, sourceText) {
+        this.from = from;
+        this.to = to;
+        this.isBlankFragment = !rootNode;
+        if (this.isBlankFragment)
+            return;
+        if (rootNode.name !== TabFragment.AnchorNodeType)
+            throw new Error(`Expected ${TabFragment.AnchorNodeType} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
+        let initialContent = new TabSegment({ [TabFragment.AnchorNodeType]: [rootNode] }, this.from);
+        this.linearParser = new LinearParser(initialContent, sourceText);
+    }
+    // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
+    static get AnchorNodeType() { return SourceNodeTypes.TabSegment; }
+    get nodeSet() { return this._nodeSet; }
+    advance() {
+        if (this.isBlankFragment)
+            return FragmentCursor.dud;
+        this._nodeSet = this.linearParser.advance();
+        return this.nodeSet ? (this.linearParser.isValid ? new FragmentCursor(this) : FragmentCursor.dud) : null;
+    }
+    /**
+     * Creates an unparsed TabFragment object that can be incrementally parsed
+     * by repeatedly calling the TabFragment.advance() method.
+     * @param node source node from which parsing begins
+     * @param editorState the EditorState from which the sourceNode was obtained
+     * @returns an unparsed TabFragment object
+     */
+    static startParse(node, editorState) {
+        if (node.name !== TabFragment.AnchorNodeType)
+            return null;
+        return new TabFragment(node.from, node.to, node, editorState.doc);
+    }
+    /**
+     * Applies a set of edits to an array of fragments, reusing unaffected fragments,
+     * removing fragments overlapping with edits, or creating new fragments with
+     * adjusted positions to replace fragments which have moved as a result of edits.
+     * @param fragments a set of TabFragment objects
+     * @param changes a set of ChangedRanges representing edits
+     * @returns a new set of fragments
+     */
+    static applyChanges(fragments, changes) {
+        if (!changes.length)
+            return fragments;
+        let result = [];
+        let fI = 1, nextF = fragments.length ? fragments[0] : null;
+        for (let cI = 0, off = 0; nextF; cI++) {
+            let nextC = cI < changes.length ? changes[cI] : null;
+            // TODO: be careful here with the <=. test to make sure that it should be <= and not just <.
+            while (nextF && (!nextC || nextF.from <= nextC.toA)) {
+                if (!nextC || nextF.to <= nextC.fromA)
+                    result.push(nextF.createOffsetCopy(-off));
+                nextF = fI < fragments.length ? fragments[fI++] : null;
+            }
+            off = nextC ? nextC.toA - nextC.toB : 0;
+        }
+        return result;
+    }
+    createOffsetCopy(offset) {
+        const copy = new TabFragment(this.from + offset, this.to + offset, null, null);
+        copy.linearParser = this.linearParser;
+        return copy;
+    }
+    /**
+     * Create a set of fragments from a freshly parsed tree, or update
+     * an existing set of fragments by replacing the ones that overlap
+     * with a tree with content from the new tree.
+     * @param tree a freshly parsed tree
+     * @param fragments a set of fragments
+     * @returns fragment set produced by merging the tree's fragment set with the provided fragment set
+     */
+    static addTree(tree, fragments = []) {
+        let result = [...tree.getFragments()];
+        for (let f of fragments)
+            if (f.to > tree.to)
+                result.push(f);
+        return result;
+    }
+    static createBlankFragment(from, to) {
+        return new TabFragment(from, to, null, null);
+    }
+    get cursor() {
+        return this.isParsed ? this.advance() : null;
+    }
+    toString() {
+        var _a;
+        return ((_a = this.cursor) === null || _a === void 0 ? void 0 : _a.printTree()) || "";
+    }
+    get isParsed() { return this.isBlankFragment || this.linearParser.isDone; }
+}
+
+class TabTreeCursor {
+    constructor(fragSet, pointer = 0) {
+        this.fragSet = fragSet;
+        this.pointer = pointer;
+        this.currentCursor = fragSet[pointer].cursor;
+    }
+    static from(fragSet, startingPos) {
+        if (!fragSet || !fragSet.length)
+            return null;
+        return new TabTreeCursor(fragSet, startingPos || 0);
+    }
+    get name() { return this.currentCursor.name; }
+    get node() { return this.currentCursor.node; }
+    getAncestors() { return this.currentCursor; }
+    firstChild() { return this.currentCursor.firstChild(); }
+    lastChild() { return this.currentCursor.lastChild(); }
+    parent() { return this.currentCursor.parent(); }
+    prevSibling() {
+        if (!this.currentCursor.fork().parent() && this.pointer > 0) {
+            this.pointer = this.pointer - 1;
+            this.currentCursor = this.fragSet[this.pointer].cursor;
+            return true;
+        }
+        return this.currentCursor.prevSibling();
+    }
+    nextSibling() {
+        if (!this.currentCursor.fork().parent() && this.pointer + 1 < this.fragSet.length) {
+            this.pointer = this.pointer + 1;
+            this.currentCursor = this.fragSet[this.pointer].cursor;
+            return true;
+        }
+        return this.currentCursor.nextSibling();
+    }
+    fork() {
+        const copy = new TabTreeCursor(this.fragSet, this.pointer);
+        copy.currentCursor = this.currentCursor;
+        return copy;
+    }
+}
+class FragmentCursor {
+    constructor(fragment) {
+        this.fragment = fragment;
+        this.ancestryTrace = [];
+        this.pointer = 0;
+    }
+    get name() { return this.fragment.nodeSet[this.pointer].name; }
+    get node() {
+        // TODO: could improve efficiency by implementing some sort of caching. This would
+        // snowball because the ResolvedASTNode class caches a bunch of values, so
+        // performance benefits might be more than meets the eye
+        return new ResolvedASTNode(this.fragment.nodeSet[this.pointer], this);
+    }
+    getAncestors() {
+        return this.node.getAncestors();
+    }
+    firstChild() {
+        if (this.fragment.nodeSet.length === 0)
+            return false;
+        let currentPointer = this.pointer;
+        if (this.fragment.nodeSet[this.pointer].length === 1)
+            return false;
+        this.pointer += 1;
+        this.ancestryTrace.push(currentPointer);
+        return true;
+    }
+    lastChild() {
+        if (!this.firstChild())
+            return false;
+        while (this.nextSibling()) { }
+        return true;
+    }
+    parent() {
+        if (this.fragment.nodeSet.length === 0)
+            return false;
+        if (this.name === TabFragment.name || this.ancestryTrace.length === 0)
+            return false;
+        this.pointer = this.ancestryTrace[this.ancestryTrace.length - 1];
+        this.ancestryTrace.pop();
+        return true;
+    }
+    prevSibling() {
+        let currentPointer = this.pointer;
+        if (!this.parent())
+            return false;
+        this.firstChild();
+        let prevSiblingPointer = this.pointer;
+        if (prevSiblingPointer === currentPointer)
+            return false;
+        while (this.nextSibling() && this.pointer !== currentPointer) {
+            prevSiblingPointer = this.pointer;
+        }
+        this.pointer = prevSiblingPointer;
+        return true;
+    }
+    nextSibling() {
+        if (!this.ancestryTrace.length)
+            return false;
+        let parentPointer = this.ancestryTrace[this.ancestryTrace.length - 1];
+        let nextInorder = this.pointer + this.fragment.nodeSet[this.pointer].length;
+        if (parentPointer + this.fragment.nodeSet[parentPointer].length <= nextInorder)
+            return false;
+        this.pointer = nextInorder;
+        return true;
+    }
+    fork() {
+        const copy = new FragmentCursor(this.fragment);
+        copy.pointer = this.pointer;
+        copy.ancestryTrace = this.ancestryTrace;
+        return copy;
+    }
+    printTree() {
+        let str = this.printTreeRecursiveHelper();
+        return str;
+    }
+    printTreeRecursiveHelper() {
+        if (this.fragment.nodeSet.length == 0)
+            return "";
+        let str = `${this.fragment.nodeSet[this.pointer].name}[${this.fragment.nodeSet[this.pointer].ranges.toString()}]`;
+        if (this.firstChild())
+            str += "(";
+        else
+            return str;
+        let first = true;
+        do {
+            if (!first)
+                str += ",";
+            first = false;
+            str += this.printTreeRecursiveHelper();
+        } while (this.nextSibling());
+        str += ")";
+        this.parent();
+        return str;
+    }
+}
+FragmentCursor.dud = new FragmentCursor(TabFragment.createBlankFragment(0, 0));
+// Don't know when we will use this, but it is for the user to 
+// be able to access and traverse the raw syntax nodes while 
+// still maintaining the fact that all nodes' positions are 
+// relative to the TabFragment in which they are contained.
+/**
+ * Creates a cursor for SyntaxNodes which are anchored to the node provided
+ * in the constructor (you can only explore the sub-tree rooted atthe provided
+ * starting node, not its siblings or ancestors)
+ */
+class AnchoredSyntaxCursor {
+    constructor(anchorNode, anchorOffset) {
+        this.anchorNode = anchorNode;
+        this.anchorOffset = anchorOffset;
+        this.cursor = anchorNode.cursor();
+    }
+    get type() { return this.cursor.type; }
+    get name() { return this.cursor.name; }
+    get from() { return this.cursor.from - this.anchorOffset; }
+    get to() { return this.cursor.to - this.anchorOffset; }
+    get node() { return new SourceNode(this.cursor.node, this.anchorOffset); }
+    firstChild() { return this.cursor.firstChild(); }
+    lastChild() { return this.cursor.lastChild(); }
+    enter(pos, side) {
+        return this.cursor.enter(pos, side);
+    }
+    parent() {
+        if (this.name === TabFragment.AnchorNodeType || this.cursorAtAnchor())
+            return false;
+        return this.cursor.parent();
+    }
+    nextSibling() {
+        if (this.name === TabFragment.AnchorNodeType || this.cursorAtAnchor())
+            return false;
+        return this.cursor.nextSibling();
+    }
+    prevSibling() {
+        if (this.name === TabFragment.AnchorNodeType || this.cursorAtAnchor())
+            return false;
+        return this.cursor.nextSibling();
+    }
+    fork() {
+        return new AnchoredSyntaxCursor(this.cursor.node, this.anchorOffset);
+    }
+    cursorAtAnchor() {
+        return this.name == this.anchorNode.name && this.from == this.anchorNode.from && this.to == this.anchorNode.to;
+    }
+}
+
 /**
  * enum values for syntax nodes from the tab-edit/parser-tablature package. (should probably be defined in that package instead.)
  */
-var SourceSyntaxNodeTypes;
-(function (SourceSyntaxNodeTypes) {
-    SourceSyntaxNodeTypes["Tablature"] = "Tablature";
-    SourceSyntaxNodeTypes["TabSegment"] = "TabSegment";
-    SourceSyntaxNodeTypes["TabSegmentLine"] = "TabSegmentLine";
-    SourceSyntaxNodeTypes["TabString"] = "TabString";
-    SourceSyntaxNodeTypes["MeasureLineName"] = "MeasureLineName";
-    SourceSyntaxNodeTypes["MeasureLine"] = "MeasureLine";
-    SourceSyntaxNodeTypes["Note"] = "Note";
-    SourceSyntaxNodeTypes["NoteDecorator"] = "NoteDecorator";
-    SourceSyntaxNodeTypes["NoteConnector"] = "NoteConnector";
-    SourceSyntaxNodeTypes["ConnectorSymbol"] = "ConnectorSymbol";
-    SourceSyntaxNodeTypes["Hammer"] = "Hammer";
-    SourceSyntaxNodeTypes["Pull"] = "Pull";
-    SourceSyntaxNodeTypes["Slide"] = "Slide";
-    SourceSyntaxNodeTypes["Fret"] = "Fret";
-    SourceSyntaxNodeTypes["Harmonic"] = "Harmonic";
-    SourceSyntaxNodeTypes["Grace"] = "Frace";
-    SourceSyntaxNodeTypes["Comment"] = "Comment";
-    SourceSyntaxNodeTypes["RepeatLine"] = "RepeatLine";
-    SourceSyntaxNodeTypes["Repeat"] = "Repeat";
-    SourceSyntaxNodeTypes["Multiplier"] = "Multiplier";
-    SourceSyntaxNodeTypes["TimeSignature"] = "TimeSignature";
-    SourceSyntaxNodeTypes["TimeSigLine"] = "TimeSigLine";
-    SourceSyntaxNodeTypes["TimingLine"] = "TimingLine";
-    SourceSyntaxNodeTypes["Modifier"] = "Modifier";
-    SourceSyntaxNodeTypes["InvalidToken"] = "\u26A0";
-})(SourceSyntaxNodeTypes || (SourceSyntaxNodeTypes = {}));
+var SourceNodeTypes;
+(function (SourceNodeTypes) {
+    SourceNodeTypes["Tablature"] = "Tablature";
+    SourceNodeTypes["TabSegment"] = "TabSegment";
+    SourceNodeTypes["TabSegmentLine"] = "TabSegmentLine";
+    SourceNodeTypes["TabString"] = "TabString";
+    SourceNodeTypes["MeasureLineName"] = "MeasureLineName";
+    SourceNodeTypes["MeasureLine"] = "MeasureLine";
+    SourceNodeTypes["Note"] = "Note";
+    SourceNodeTypes["NoteDecorator"] = "NoteDecorator";
+    SourceNodeTypes["NoteConnector"] = "NoteConnector";
+    SourceNodeTypes["ConnectorSymbol"] = "ConnectorSymbol";
+    SourceNodeTypes["Hammer"] = "Hammer";
+    SourceNodeTypes["Pull"] = "Pull";
+    SourceNodeTypes["Slide"] = "Slide";
+    SourceNodeTypes["Fret"] = "Fret";
+    SourceNodeTypes["Harmonic"] = "Harmonic";
+    SourceNodeTypes["Grace"] = "Frace";
+    SourceNodeTypes["Comment"] = "Comment";
+    SourceNodeTypes["Component"] = "Component";
+    SourceNodeTypes["Connector"] = "Connector";
+    SourceNodeTypes["RepeatLine"] = "RepeatLine";
+    SourceNodeTypes["Repeat"] = "Repeat";
+    SourceNodeTypes["Multiplier"] = "Multiplier";
+    SourceNodeTypes["TimeSignature"] = "TimeSignature";
+    SourceNodeTypes["TimeSigLine"] = "TimeSigLine";
+    SourceNodeTypes["TimingLine"] = "TimingLine";
+    SourceNodeTypes["Modifier"] = "Modifier";
+    SourceNodeTypes["InvalidToken"] = "\u26A0";
+})(SourceNodeTypes || (SourceNodeTypes = {}));
+var ASTNodeTypes;
+(function (ASTNodeTypes) {
+    ASTNodeTypes["TabSegment"] = "TabSegment";
+    ASTNodeTypes["TabBlock"] = "TabBlock";
+    ASTNodeTypes["Measure"] = "Measure";
+    ASTNodeTypes["Sound"] = "Sound";
+    ASTNodeTypes["MeasureLineName"] = "MeasureLineName";
+    ASTNodeTypes["LineNaming"] = "LineNaming";
+    ASTNodeTypes["Hammer"] = "Hammer";
+    ASTNodeTypes["Pull"] = "Pull";
+    ASTNodeTypes["Slide"] = "Slide";
+    ASTNodeTypes["Grace"] = "Grace";
+    ASTNodeTypes["Harmonic"] = "Harmonic";
+    ASTNodeTypes["Fret"] = "Fret";
+    ASTNodeTypes["Repeat"] = "Repeat";
+    ASTNodeTypes["TimeSignature"] = "TimeSignature";
+    ASTNodeTypes["Multiplier"] = "Multiplier";
+    ASTNodeTypes["ConnectorGroup"] = "ConnectorGroup";
+    ASTNodeTypes["Component"] = "Component";
+    ASTNodeTypes["Connector"] = "Connector";
+})(ASTNodeTypes || (ASTNodeTypes = {}));
 /**
 * a wrapper class around the SyntaxNode object, but
 * whose ranges/positions are all relative to a given
 * anchor position.
 */
-class AnchoredSyntaxNode {
+class SourceNode {
     constructor(node, anchorPos) {
         this.node = node;
         this.anchorPos = anchorPos;
@@ -49,13 +426,16 @@ class AnchoredSyntaxNode {
     get from() { return this.node.from - this.anchorPos; }
     get to() { return this.node.to - this.anchorPos; }
     getChild(type) {
-        return new AnchoredSyntaxNode(this.node.getChild(type), this.anchorPos);
+        return new SourceNode(this.node.getChild(type), this.anchorPos);
     }
     getChildren(type) {
-        return this.node.getChildren(type).map((node) => new AnchoredSyntaxNode(node, this.anchorPos));
+        return this.node.getChildren(type).map((node) => new SourceNode(node, this.anchorPos));
     }
     createOffsetCopy(offset) {
-        return new AnchoredSyntaxNode(this.node, this.anchorPos + offset);
+        return new SourceNode(this.node, this.anchorPos + offset);
+    }
+    get cursor() {
+        return new AnchoredSyntaxCursor(this.node, this.anchorPos);
     }
 }
 /**
@@ -213,7 +593,7 @@ class AnchoredASTNode {
         this._sourceSyntaxNodes = {};
         Object.keys(this.sourceNodes).forEach((type) => {
             this._sourceSyntaxNodes[type] = this.sourceNodes[type].map(node => {
-                return new AnchoredSyntaxNode(node, node.from - this.anchorPos);
+                return new SourceNode(node, node.from - this.anchorPos);
             });
         });
         return this._sourceSyntaxNodes;
@@ -230,10 +610,10 @@ class AnchoredASTNode {
 }
 class TabSegment extends AnchoredASTNode {
     createChildren(sourceText) {
-        let modifiers = this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0].getChildren(SourceSyntaxNodeTypes.Modifier);
+        let modifiers = this.sourceNodes[SourceNodeTypes.TabSegment][0].getChildren(SourceNodeTypes.Modifier);
         let strings = [];
-        for (let line of this.sourceNodes[SourceSyntaxNodeTypes.TabSegment][0].getChildren(SourceSyntaxNodeTypes.TabSegmentLine)) {
-            strings.push(line.getChildren(SourceSyntaxNodeTypes.TabString).reverse()); //reversed for efficiency in performing remove operations
+        for (let line of this.sourceNodes[SourceNodeTypes.TabSegment][0].getChildren(SourceNodeTypes.TabSegmentLine)) {
+            strings.push(line.getChildren(SourceNodeTypes.TabString).reverse()); //reversed for efficiency in performing remove operations
         }
         let blocks = []; //each array of syntax node is a block
         let blockAnchors = [];
@@ -307,8 +687,8 @@ class TabSegment extends AnchoredASTNode {
         let tabBlocks = [];
         for (bI = 0; bI < blocks.length; bI++) {
             tabBlocks.push(new TabBlock({
-                [SourceSyntaxNodeTypes.Modifier]: blockModifiers[bI] || [],
-                [SourceSyntaxNodeTypes.TabString]: blocks[bI]
+                [SourceNodeTypes.Modifier]: blockModifiers[bI] || [],
+                [SourceNodeTypes.TabString]: blocks[bI]
             }, this.anchorPos));
         }
         return tabBlocks;
@@ -320,31 +700,31 @@ class TabSegment extends AnchoredASTNode {
 class TabBlock extends AnchoredASTNode {
     createChildren() {
         let result = [];
-        let modifiers = this.sourceNodes[SourceSyntaxNodeTypes.Modifier];
+        let modifiers = this.sourceNodes[SourceNodeTypes.Modifier];
         for (let mod of modifiers) {
             result.push(Modifier.from(mod.name, { [mod.name]: [mod] }, this.anchorPos));
         }
-        let strings = this.sourceNodes[SourceSyntaxNodeTypes.TabString];
+        let strings = this.sourceNodes[SourceNodeTypes.TabString];
         let measureLineNames = [];
         let measures = [];
         for (let string of strings) {
             // make sure multiplier is inserted as a child before all measures so it is traversed first
-            let multiplier = string.getChild(SourceSyntaxNodeTypes.Multiplier);
+            let multiplier = string.getChild(SourceNodeTypes.Multiplier);
             if (multiplier)
                 result.push(Modifier.from(multiplier.name, { [multiplier.name]: [multiplier] }, this.anchorPos));
-            let mlineName = string.getChild(SourceSyntaxNodeTypes.MeasureLineName);
+            let mlineName = string.getChild(SourceNodeTypes.MeasureLineName);
             if (mlineName)
                 measureLineNames.push(mlineName);
-            let measurelines = string.getChildren(SourceSyntaxNodeTypes.MeasureLine);
+            let measurelines = string.getChildren(SourceNodeTypes.MeasureLine);
             for (let i = 0; i < measurelines.length; i++) {
                 if (!measures[i])
                     measures[i] = [];
                 measures[i].push(measurelines[i]);
             }
         }
-        result.push(new LineNaming({ [SourceSyntaxNodeTypes.MeasureLineName]: measureLineNames }, this.anchorPos));
+        result.push(new LineNaming({ [SourceNodeTypes.MeasureLineName]: measureLineNames }, this.anchorPos));
         for (let i = 0; i < measures.length; i++) {
-            result.push(new Measure({ [SourceSyntaxNodeTypes.MeasureLine]: measures[i] }, this.anchorPos));
+            result.push(new Measure({ [SourceNodeTypes.MeasureLine]: measures[i] }, this.anchorPos));
         }
         return result;
     }
@@ -352,7 +732,7 @@ class TabBlock extends AnchoredASTNode {
 class Measure extends AnchoredASTNode {
     createChildren(sourceText) {
         var _a;
-        let lines = this.sourceNodes[SourceSyntaxNodeTypes.MeasureLine];
+        let lines = this.sourceNodes[SourceNodeTypes.MeasureLine];
         let measureComponentsByLine = [];
         let mcAnchors = [];
         for (let i = 0; i < lines.length; i++) {
@@ -365,10 +745,10 @@ class Measure extends AnchoredASTNode {
             let cursorCopy = cursor.node.cursor();
             let connectorRecursionRoot = null;
             do {
-                if (cursorCopy.type.is(SourceSyntaxNodeTypes.Note) || cursorCopy.type.is(SourceSyntaxNodeTypes.NoteDecorator)) {
+                if (cursorCopy.type.is(SourceNodeTypes.Note) || cursorCopy.type.is(SourceNodeTypes.NoteDecorator)) {
                     measureComponentsByLine[i].push(cursorCopy.node);
-                    if (cursorCopy.type.is(SourceSyntaxNodeTypes.NoteDecorator)) {
-                        mcAnchors[i].push(this.charDistance(line.from, (((_a = cursorCopy.node.getChild(SourceSyntaxNodeTypes.Note)) === null || _a === void 0 ? void 0 : _a.from) || cursorCopy.from), sourceText));
+                    if (cursorCopy.type.is(SourceNodeTypes.NoteDecorator)) {
+                        mcAnchors[i].push(this.charDistance(line.from, (((_a = cursorCopy.node.getChild(SourceNodeTypes.Note)) === null || _a === void 0 ? void 0 : _a.from) || cursorCopy.from), sourceText));
                     }
                     else
                         mcAnchors[i].push(this.charDistance(line.from, cursorCopy.from, sourceText));
@@ -378,13 +758,13 @@ class Measure extends AnchoredASTNode {
                     }
                     continue;
                 }
-                if (!cursorCopy.node.type.is(SourceSyntaxNodeTypes.NoteConnector))
+                if (!cursorCopy.node.type.is(SourceNodeTypes.NoteConnector))
                     break;
                 if (!connectorRecursionRoot)
                     connectorRecursionRoot = cursorCopy.node.cursor();
                 measureComponentsByLine[i].push(cursorCopy.node);
                 let connector = cursorCopy.node;
-                let firstNote = connector.getChild(SourceSyntaxNodeTypes.Note) || connector.getChild(SourceSyntaxNodeTypes.NoteDecorator);
+                let firstNote = connector.getChild(SourceNodeTypes.Note) || connector.getChild(SourceNodeTypes.NoteDecorator);
                 if (firstNote) {
                     mcAnchors[i].push(this.charDistance(line.from, firstNote.from, sourceText));
                     cursorCopy = firstNote.cursor();
@@ -454,11 +834,11 @@ class Sound extends AnchoredASTNode {
         let components = this.sourceNodes.MultiType; // TODO: MultiType does not correspond to any node in the Syntax Tree. Think of a better way to transfer this data
         let result = [];
         for (let component of components) {
-            if (component.type.is(SourceSyntaxNodeTypes.Note))
+            if (component.type.is(SourceNodeTypes.Note))
                 result.push(Note.from(component.name, { [component.name]: [component] }, this.anchorPos));
-            else if (component.type.is(SourceSyntaxNodeTypes.NoteDecorator))
+            else if (component.type.is(SourceNodeTypes.NoteDecorator))
                 result.push(NoteDecorator.from(component.name, { [component.name]: [component] }, this.anchorPos));
-            else if (component.type.is(SourceSyntaxNodeTypes.NoteConnector))
+            else if (component.type.is(SourceNodeTypes.NoteConnector))
                 result.push(NoteConnector.from(component.name, { [component.name]: [component] }, this.anchorPos));
         }
         return result;
@@ -469,8 +849,8 @@ class MeasureLineName extends AnchoredASTNode {
 }
 class LineNaming extends AnchoredASTNode {
     createChildren() {
-        let names = this.sourceNodes[SourceSyntaxNodeTypes.MeasureLineName];
-        return names.map((name) => new MeasureLineName({ [SourceSyntaxNodeTypes.MeasureLineName]: [name] }, this.anchorPos));
+        let names = this.sourceNodes[SourceNodeTypes.MeasureLineName];
+        return names.map((name) => new MeasureLineName({ [SourceNodeTypes.MeasureLineName]: [name] }, this.anchorPos));
     }
 }
 class NoteConnector extends AnchoredASTNode {
@@ -502,14 +882,14 @@ class NoteConnector extends AnchoredASTNode {
         if (!cursor.firstChild())
             return [];
         do {
-            if (cursor.type.is(SourceSyntaxNodeTypes.Note) || cursor.type.is(SourceSyntaxNodeTypes.NoteDecorator)) {
+            if (cursor.type.is(SourceNodeTypes.Note) || cursor.type.is(SourceNodeTypes.NoteDecorator)) {
                 notes.push(cursor.node);
                 if (nestedConnectorExit) {
                     cursor = nestedConnectorExit.cursor();
                     nestedConnectorExit = null;
                 }
             }
-            else if (cursor.type.is(SourceSyntaxNodeTypes.NoteConnector)) {
+            else if (cursor.type.is(SourceNodeTypes.NoteConnector)) {
                 nestedConnectorExit = cursor.node;
                 cursor.firstChild();
             }
@@ -517,57 +897,57 @@ class NoteConnector extends AnchoredASTNode {
         return notes;
     }
     createChildren() { return this.notes.map((node) => Note.from(node.name, { [node.name]: [node] }, this.anchorPos)); }
-    static isNoteConnector(name) { return name in [SourceSyntaxNodeTypes.Hammer, SourceSyntaxNodeTypes.Pull, SourceSyntaxNodeTypes.Slide]; }
+    static isNoteConnector(name) { return name in [SourceNodeTypes.Hammer, SourceNodeTypes.Pull, SourceNodeTypes.Slide]; }
     static from(type, sourceNodes, offset) {
         switch (type) {
-            case SourceSyntaxNodeTypes.Hammer: return new Hammer(sourceNodes, offset);
-            case SourceSyntaxNodeTypes.Pull: return new Pull(sourceNodes, offset);
-            case SourceSyntaxNodeTypes.Slide: return new Slide(sourceNodes, offset);
+            case SourceNodeTypes.Hammer: return new Hammer(sourceNodes, offset);
+            case SourceNodeTypes.Pull: return new Pull(sourceNodes, offset);
+            case SourceNodeTypes.Slide: return new Slide(sourceNodes, offset);
         }
         throw new Error(`Invalid NoteConnector type "${type}"`);
     }
 }
 class Hammer extends NoteConnector {
-    getType() { return SourceSyntaxNodeTypes.Hammer; }
+    getType() { return SourceNodeTypes.Hammer; }
 }
 class Pull extends NoteConnector {
-    getType() { return SourceSyntaxNodeTypes.Pull; }
+    getType() { return SourceNodeTypes.Pull; }
 }
 class Slide extends NoteConnector {
-    getType() { return SourceSyntaxNodeTypes.Slide; }
+    getType() { return SourceNodeTypes.Slide; }
 }
 class NoteDecorator extends AnchoredASTNode {
     createChildren() {
-        let note = this.sourceNodes[this.getType()][0].getChild(SourceSyntaxNodeTypes.Note);
+        let note = this.sourceNodes[this.getType()][0].getChild(SourceNodeTypes.Note);
         if (!note)
             return [];
         return [Note.from(note.name, { [note.name]: [note] }, this.anchorPos)];
     }
     static from(type, sourceNodes, offset) {
         switch (type) {
-            case SourceSyntaxNodeTypes.Grace: return new Grace(sourceNodes, offset);
-            case SourceSyntaxNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
+            case SourceNodeTypes.Grace: return new Grace(sourceNodes, offset);
+            case SourceNodeTypes.Harmonic: return new Harmonic(sourceNodes, offset);
         }
         throw new Error(`Invalid NoteDecorator type "${type}"`);
     }
 }
 class Grace extends NoteDecorator {
-    getType() { return SourceSyntaxNodeTypes.Grace; }
+    getType() { return SourceNodeTypes.Grace; }
 }
 class Harmonic extends NoteDecorator {
-    getType() { return SourceSyntaxNodeTypes.Harmonic; }
+    getType() { return SourceNodeTypes.Harmonic; }
 }
 class Note extends AnchoredASTNode {
     createChildren() { return []; }
     static from(type, sourceNodes, offset) {
         switch (type) {
-            case SourceSyntaxNodeTypes.Fret: return new Fret(sourceNodes, offset);
+            case SourceNodeTypes.Fret: return new Fret(sourceNodes, offset);
         }
         throw new Error(`Invalid Note type "${type}"`);
     }
 }
 class Fret extends Note {
-    getType() { return SourceSyntaxNodeTypes.Fret; }
+    getType() { return SourceNodeTypes.Fret; }
 }
 // modifiers
 class Modifier extends AnchoredASTNode {
@@ -576,347 +956,414 @@ class Modifier extends AnchoredASTNode {
     }
     static from(type, sourceNodes, offset) {
         switch (type) {
-            case SourceSyntaxNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
-            case SourceSyntaxNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
-            case SourceSyntaxNodeTypes.Multiplier: return new Multiplier(sourceNodes, offset);
+            case SourceNodeTypes.Repeat: return new Repeat(sourceNodes, offset);
+            case SourceNodeTypes.TimeSignature: return new TimeSignature(sourceNodes, offset);
+            case SourceNodeTypes.Multiplier: return new Multiplier(sourceNodes, offset);
         }
         throw new Error(`Invalid Modifier type "${type}"`);
     }
 }
 class Repeat extends Modifier {
-    getType() { return SourceSyntaxNodeTypes.Repeat; }
+    getType() { return SourceNodeTypes.Repeat; }
 }
 class TimeSignature extends Modifier {
-    getType() { return SourceSyntaxNodeTypes.TimeSignature; }
+    getType() { return SourceNodeTypes.TimeSignature; }
 }
 class Multiplier extends Modifier {
-    getType() { return SourceSyntaxNodeTypes.Multiplier; }
+    getType() { return SourceNodeTypes.Multiplier; }
 }
-const ASTNodeTypes = {
-    TabSegment: TabSegment.name,
-    TabBlock: TabBlock.name,
-    Measure: Measure.name,
-    Sound: Sound.name,
-    MeasureLineName: MeasureLineName.name,
-    LineNaming: LineNaming.name,
-    Hammer: Hammer.name,
-    Pull: Pull.name,
-    Slide: Slide.name,
-    Grace: Grace.name,
-    Harmonic: Harmonic.name,
-    Fret: Fret.name,
-    Repeat: Repeat.name,
-    TimeSignature: TimeSignature.name,
-    Multiplier: Multiplier.name
-};
-Object.freeze(ASTNodeTypes);
 
-/// LinearParser enables gradual parsing of a raw syntax node into an array-based tree data structure efficiently using a singly-linked-list-like structure
-// the demo below shows how the LinearParser works (the underscores (_xyz_) show what nodes are added in a given step)
-// init:      [_rootNode_]
-// advance(): [rootNode, _rootNodeChild1, rootNodeChild2, rootNodeChild3..._]
-// advance(): [rootNode, rootNodeChild1, _rootNodeChild1Child1, rootNodeChild1Child2, ..._, rootNodeChild2, rootNodeChild3...]
-// ...
-// This is done using a singly-linked list to make it more efficient than performing array insert operations.
-class LinearParser {
-    constructor(initialNode, 
-    /// The index of all the parsed content will be relative to this offset
-    /// This is usually the index of the source TabFragment, to make 
-    /// for efficient relocation of TabFragments
-    sourceText) {
-        this.sourceText = sourceText;
-        // TODO: you might want to change this later to a Uint16array with the following format:
-        // [node1typeID, length, rangeLen, ranges..., node2typeID, ...]
-        // To do this, you will have to modify the ASTNode.increaseLength() function to account 
-        // for the fact that different nodes can have different ranges.
-        // not sure if better or worse for time/memory efficiency
-        this.nodeSet = [];
-        this.head = null;
-        this.ancestryStack = [];
-        this.cachedIsValid = null;
-        this.head = new LPNode([initialNode], null);
-    }
-    advance() {
-        if (!this.head)
-            return this.nodeSet;
-        let content = this.head.getNextContent();
-        if (!content) {
-            this.head = this.head.next;
-            this.ancestryStack.pop();
-            return null;
-        }
-        this.nodeSet.push(content);
-        this.ancestryStack.push(this.nodeSet.length - 1);
-        let children = content.parse(this.sourceText);
-        for (let ancestor of this.ancestryStack) {
-            this.nodeSet[ancestor].increaseLength(children);
-        }
-        this.head = new LPNode(children, this.head);
-        return null;
-    }
-    get isDone() { return this.head == null; }
-    get isValid() {
-        if (this.cachedIsValid !== null)
-            return this.cachedIsValid;
-        if (!this.isDone)
-            return false;
-        let nodeSet = this.advance();
-        if (!nodeSet)
-            return true; //this should never be the case cuz we've finished parsing, but just to be sure...
-        let hasMeasureline = false;
-        outer: for (let node of nodeSet) {
-            if (node.name !== Measure.name)
+/**
+ * Arrange nodes into groups where every node in a group overlaps with a pivot node.
+ * The node which is closest to the start of the line (or if there's a tie, the node
+ * with smallest line number) becomes the pivot and the first node in each line which
+ * overlaps with that pivot forms a group.
+ * pivot.
+ *
+ * e.g.
+ * NOTE: this example only makes sense if you're viewing it with a monospaced font!!!
+ *
+ * this:
+ *
+ *   |--a-| |-pivot2-|
+ * |-----pivot1-----| |-pivot3-|
+ *   |----b---| |---c---|
+ *
+ * becomes three groups:
+ *
+ * |--a-|                       |-pivot2-|
+ * |-----pivot1-----|                               |-pivot3|
+ * |----b---|                   |---c---|
+ *
+ * pivot1 is the first pivot because it is closest to the start of the line.
+ * it overlaps with a and b, so the three form a group. they are not considered
+ * from hereon out. (all that's left is pivot2, pivot3 and c) pivot2 comes
+ * earliest in the line so it is the pivot of its own group. it only overlaps with c, so
+ * it forms a group with c. All that's left is pivot3, which forms a group of its own.
+ *
+ * This is used to group a bunch of TabString nodes arranged by lin into
+ * multiple TabBlocks (think one TabSegment(multiple TabStrings) node becomes multiple TabBlock nodes).
+ * @param nodesGroupedByLine an array of node groups where each node group is a group of nodes that live on the same line, arranged in the order they appear on that line.
+ * @param source_text the source text from which these nodes were parsed
+ * @returns an array where each entry is a list of nodes which belong to the same group.
+ */
+function createPivotalGrouping(nodesGroupedByLine, source_text) {
+    const groups = [];
+    const pivots = [];
+    // variables defined outside loop for efficiency
+    let gI, node, nodeColRange, pivot;
+    let nodePlacedInGroup;
+    let groupingDone;
+    for (let firstUncompletedGroupIdx = 0; !groupingDone; firstUncompletedGroupIdx++) {
+        groupingDone = true;
+        for (let lineIdx = 0; lineIdx < nodesGroupedByLine.length; lineIdx++) {
+            node = nodesGroupedByLine[lineIdx][firstUncompletedGroupIdx];
+            groupingDone && (groupingDone = !node);
+            if (!node)
                 continue;
-            for (let i = 1; i < node.ranges.length; i += 2) {
-                hasMeasureline = hasMeasureline || this.sourceText.slice(node.anchorPos + node.ranges[i - 1], node.anchorPos + node.ranges[i]).toString().replace(/\s/g, '').length !== 0;
-                if (hasMeasureline)
-                    break outer;
+            nodeColRange = { from: columnDistance(node.from, source_text), to: columnDistance(node.to, source_text) };
+            nodePlacedInGroup = false;
+            for (gI = firstUncompletedGroupIdx; gI < groups.length; gI++) {
+                pivot = pivots[gI];
+                if (pivot.to <= nodeColRange.from)
+                    continue; // skip groups positioned before this node
+                if (pivot.from >= nodeColRange.to) {
+                    // This node doesn't overlap with any known groups
+                    // so we create a new group
+                    if (gI === 0) {
+                        groups.unshift([node]);
+                        pivots.unshift(nodeColRange);
+                    }
+                    else {
+                        groups.splice(gI, 0, [node]);
+                        pivots.splice(gI, 0, nodeColRange);
+                    }
+                    nodePlacedInGroup = true;
+                    break;
+                }
+                // node overlaps with this group. add it to the group
+                groups[gI].push(node);
+                // this node is the new pivot of its group if it starts before current pivot.
+                if (nodeColRange.from < pivot.from)
+                    pivots[gI] = nodeColRange;
+                nodePlacedInGroup = true;
+                break;
+            }
+            if (!nodePlacedInGroup) {
+                // this node belongs to a new group
+                // that comes after all existing groups.
+                // it is in a group of its own
+                groups.push([node]);
+                pivots.push(nodeColRange);
+                continue;
             }
         }
-        this.cachedIsValid = hasMeasureline;
-        return this.cachedIsValid;
     }
+    return groups;
 }
-class LPNode {
-    constructor(content, next) {
-        this.content = content;
-        this.next = next;
-        this.contentPointer = 0;
-    }
-    getNextContent() {
-        if (this.contentPointer >= this.content.length)
-            return null;
-        return this.content[this.contentPointer++];
-    }
-}
-
-class TabTreeCursor {
-    constructor(fragSet, pointer = 0) {
-        this.fragSet = fragSet;
-        this.pointer = pointer;
-        this.currentCursor = fragSet[pointer].cursor;
-    }
-    static from(fragSet, startingPos) {
-        if (!fragSet || !fragSet.length)
-            return null;
-        return new TabTreeCursor(fragSet, startingPos || 0);
-    }
-    get name() { return this.currentCursor.name; }
-    get node() { return this.currentCursor.node; }
-    getAncestors() { return this.currentCursor; }
-    firstChild() { return this.currentCursor.firstChild(); }
-    lastChild() { return this.currentCursor.lastChild(); }
-    parent() { return this.currentCursor.parent(); }
-    prevSibling() {
-        if (!this.currentCursor.fork().parent() && this.pointer > 0) {
-            this.pointer = this.pointer - 1;
-            this.currentCursor = this.fragSet[this.pointer].cursor;
-            return true;
-        }
-        return this.currentCursor.prevSibling();
-    }
-    nextSibling() {
-        if (!this.currentCursor.fork().parent() && this.pointer + 1 < this.fragSet.length) {
-            this.pointer = this.pointer + 1;
-            this.currentCursor = this.fragSet[this.pointer].cursor;
-            return true;
-        }
-        return this.currentCursor.nextSibling();
-    }
-    fork() {
-        const copy = new TabTreeCursor(this.fragSet, this.pointer);
-        copy.currentCursor = this.currentCursor;
-        return copy;
-    }
-}
-class FragmentCursor {
-    constructor(fragment) {
-        this.fragment = fragment;
-        this.ancestryTrace = [];
-        this.pointer = 0;
-    }
-    get name() { return this.fragment.nodeSet[this.pointer].name; }
-    get node() {
-        // TODO: could improve efficiency by implementing some sort of caching. This would
-        // snowball because the ResolvedASTNode class caches a bunch of values, so
-        // performance benefits might be more than meets the eye
-        return new ResolvedASTNode(this.fragment.nodeSet[this.pointer], this);
-    }
-    getAncestors() {
-        return this.node.getAncestors();
-    }
-    firstChild() {
-        if (this.fragment.nodeSet.length === 0)
-            return false;
-        let currentPointer = this.pointer;
-        if (this.fragment.nodeSet[this.pointer].length === 1)
-            return false;
-        this.pointer += 1;
-        this.ancestryTrace.push(currentPointer);
-        return true;
-    }
-    lastChild() {
-        if (!this.firstChild())
-            return false;
-        while (this.nextSibling()) { }
-        return true;
-    }
-    parent() {
-        if (this.fragment.nodeSet.length === 0)
-            return false;
-        if (this.name === TabFragment.name || this.ancestryTrace.length === 0)
-            return false;
-        this.pointer = this.ancestryTrace[this.ancestryTrace.length - 1];
-        this.ancestryTrace.pop();
-        return true;
-    }
-    prevSibling() {
-        let currentPointer = this.pointer;
-        if (!this.parent())
-            return false;
-        this.firstChild();
-        let prevSiblingPointer = this.pointer;
-        if (prevSiblingPointer === currentPointer)
-            return false;
-        while (this.nextSibling() && this.pointer !== currentPointer) {
-            prevSiblingPointer = this.pointer;
-        }
-        this.pointer = prevSiblingPointer;
-        return true;
-    }
-    nextSibling() {
-        if (!this.ancestryTrace.length)
-            return false;
-        let parentPointer = this.ancestryTrace[this.ancestryTrace.length - 1];
-        let nextInorder = this.pointer + this.fragment.nodeSet[this.pointer].length;
-        if (parentPointer + this.fragment.nodeSet[parentPointer].length <= nextInorder)
-            return false;
-        this.pointer = nextInorder;
-        return true;
-    }
-    fork() {
-        const copy = new FragmentCursor(this.fragment);
-        copy.pointer = this.pointer;
-        copy.ancestryTrace = this.ancestryTrace;
-        return copy;
-    }
-    printTree() {
-        let str = this.printTreeRecursiveHelper();
-        return str;
-    }
-    printTreeRecursiveHelper() {
-        if (this.fragment.nodeSet.length == 0)
-            return "";
-        let str = `${this.fragment.nodeSet[this.pointer].name}[${this.fragment.nodeSet[this.pointer].ranges.toString()}]`;
-        if (this.firstChild())
-            str += "(";
-        else
-            return str;
-        let first = true;
-        do {
-            if (!first)
-                str += ",";
-            first = false;
-            str += this.printTreeRecursiveHelper();
-        } while (this.nextSibling());
-        str += ")";
-        this.parent();
-        return str;
-    }
-}
-FragmentCursor.dud = new FragmentCursor(TabFragment.createBlankFragment(0, 0));
-
-// TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
-class TabFragment {
-    constructor(from, to, rootNode, sourceText) {
-        this.from = from;
-        this.to = to;
-        this.isBlankFragment = !rootNode;
-        if (this.isBlankFragment)
-            return;
-        if (rootNode.name !== TabFragment.AnchorNodeType)
-            throw new Error(`Expected ${TabFragment.AnchorNodeType} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
-        let initialContent = new TabSegment({ [TabFragment.AnchorNodeType]: [rootNode] }, this.from);
-        this.linearParser = new LinearParser(initialContent, sourceText);
-    }
-    // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
-    static get AnchorNodeType() { return SourceSyntaxNodeTypes.TabSegment; }
-    get nodeSet() { return this._nodeSet; }
-    advance() {
-        if (this.isBlankFragment)
-            return FragmentCursor.dud;
-        this._nodeSet = this.linearParser.advance();
-        return this.nodeSet ? (this.linearParser.isValid ? new FragmentCursor(this) : FragmentCursor.dud) : null;
-    }
-    /**
-     * Creates an unparsed TabFragment object that can be incrementally parsed
-     * by repeatedly calling the TabFragment.advance() method.
-     * @param node source node from which parsing begins
-     * @param editorState the EditorState from which the sourceNode was obtained
-     * @returns an unparsed TabFragment object
-     */
-    static startParse(node, editorState) {
-        if (node.name !== TabFragment.AnchorNodeType)
-            return null;
-        return new TabFragment(node.from, node.to, node, editorState.doc);
-    }
-    /**
-     * Applies a set of edits to an array of fragments, reusing unaffected fragments,
-     * removing fragments overlapping with edits, or creating new fragments with
-     * adjusted positions to replace fragments which have moved as a result of edits.
-     * @param fragments a set of TabFragment objects
-     * @param changes a set of ChangedRanges representing edits
-     * @returns a new set of fragments
-     */
-    static applyChanges(fragments, changes) {
-        if (!changes.length)
-            return fragments;
-        let result = [];
-        let fI = 1, nextF = fragments.length ? fragments[0] : null;
-        for (let cI = 0, off = 0; nextF; cI++) {
-            let nextC = cI < changes.length ? changes[cI] : null;
-            // TODO: be careful here with the <=. test to make sure that it should be <= and not just <.
-            while (nextF && (!nextC || nextF.from <= nextC.toA)) {
-                if (!nextC || nextF.to <= nextC.fromA)
-                    result.push(nextF.createOffsetCopy(-off));
-                nextF = fI < fragments.length ? fragments[fI++] : null;
+/**
+ * Arranges nodes into groups where the earliest nodes that appear in each
+ * line form their own group, and this process repeats.
+ *
+ * e.g. this:
+ * |--|-----|---|
+ *      |----|------|
+ * |------|
+ *
+ * becomes three groups:
+ * |--|             |-----|             |---|
+ * |----|           |------|
+ * |------|
+ *
+ * This is used to group a bunch of MesureLine nodes arranged by line into multiple Measure nodes
+ * @param nodesGroupedByLine an array of node groups where each node group is a group of nodes that live on the same line, arranged in the order they appear on that line.
+ * @param source_text the source text from which these nodes were parsed
+ * @returns an array where each entry is a list of nodes which belong to the same group.
+ */
+function createSequentialGrouping(nodesGroupedByLine, source_text) {
+    const groups = [];
+    let groupingDone, line, node;
+    for (let gI = 0; !groupingDone; gI++) {
+        groupingDone = true;
+        for (line of nodesGroupedByLine) {
+            node = line[gI];
+            if (!node) {
+                groupingDone = false;
+                continue;
             }
-            off = nextC ? nextC.toA - nextC.toB : 0;
+            if (groups[gI])
+                groups[gI].push(node);
+            else
+                groups[gI] = [node];
         }
-        return result;
     }
-    createOffsetCopy(offset) {
-        const copy = new TabFragment(this.from + offset, this.to + offset, null, null);
-        copy.linearParser = this.linearParser;
-        return copy;
-    }
-    /**
-     * Create a set of fragments from a freshly parsed tree, or update
-     * an existing set of fragments by replacing the ones that overlap
-     * with a tree with content from the new tree.
-     * @param tree a freshly parsed tree
-     * @param fragments a set of fragments
-     * @returns fragment set produced by merging the tree's fragment set with the provided fragment set
-     */
-    static addTree(tree, fragments = []) {
-        let result = [...tree.getFragments()];
-        for (let f of fragments)
-            if (f.to > tree.to)
-                result.push(f);
-        return result;
-    }
-    static createBlankFragment(from, to) {
-        return new TabFragment(from, to, null, null);
-    }
-    get cursor() {
-        return this.isParsed ? this.advance() : null;
-    }
-    toString() {
+    return groups;
+}
+/**
+ * Arranges components of a measure into groups based on which belong to the same sound.
+ * Components whose notes have the same non-whitespace distance from the start of their measure line
+ * belong to the same sound.
+ *
+ * e.g.
+ *    |-   ---g7--3--4-|        when normalized, becomes this:     |----g7--3--4-|
+ * |-----8-- - --6-|                                               |-----8-----6-|
+ *
+ * and it produces these three sound groupings:
+ *
+ *      |g7|    |3|     |4|
+ *      |8|     | |     |6|
+ *
+ * These two components "g7"(grace-7) and "8" belong to the same sound because
+ * their notes "7" and "8" both have the same non-whitespace distance from
+ * the start of their respective measure lines.
+ *
+ * @param componentsGroupedByLine an array of "Component" node groups where each node group is a group of nodes that live on the same line, arranged in the order they appear on that line.
+ * @param measurelineStartIndices a parallel array to the `componentsGroupedByLine` array parameter where each entry is the start index of the measureline
+ * @param source_text the source text from which these nodes were parsed
+ */
+function createSoundGrouping(componentsGroupedByLine, measurelineStartIndices, source_text) {
+    const distanceCache = new Map();
+    const getComponentDistance = (component, lineIdx) => {
         var _a;
-        return ((_a = this.cursor) === null || _a === void 0 ? void 0 : _a.printTree()) || "";
+        if (!distanceCache.has(component)) {
+            const componentPosition = ((_a = component.getChild(SourceNodeTypes.Note)) === null || _a === void 0 ? void 0 : _a.from) || component.from;
+            distanceCache.set(component, nonWhitespaceDistance(measurelineStartIndices[lineIdx], componentPosition, source_text));
+        }
+        return distanceCache.get(component);
+    };
+    const sounds = [];
+    const pivotDistances = [];
+    // variables defined outside loop for efficiency
+    let sI, component, componentDistance, pivotDistance;
+    let componentPlacedInSound;
+    let groupingDone;
+    for (let firstUncompletedSoundIdx = 0; !groupingDone; firstUncompletedSoundIdx++) {
+        groupingDone = true;
+        for (let lineIdx = 0; lineIdx < componentsGroupedByLine.length; lineIdx++) {
+            component = componentsGroupedByLine[lineIdx][firstUncompletedSoundIdx];
+            groupingDone && (groupingDone = !component);
+            if (!component)
+                continue;
+            componentDistance = getComponentDistance(component, lineIdx);
+            componentPlacedInSound = false;
+            for (sI = firstUncompletedSoundIdx; sI < sounds.length; sI++) {
+                pivotDistance = pivotDistances[sI];
+                if (pivotDistance < componentDistance)
+                    continue; // skip sounds positioned before this component
+                if (pivotDistance > componentDistance) {
+                    // component doesn't overlap with any known sounds
+                    // so we create a new sound at this position.
+                    if (sI === 0) {
+                        sounds.unshift([component]);
+                        pivotDistances.unshift(componentDistance);
+                    }
+                    else {
+                        sounds.splice(sI, 0, [component]);
+                        pivotDistances.splice(sI, 0, componentDistance);
+                    }
+                    componentPlacedInSound = true;
+                    break;
+                }
+                // component overlaps with this sound. add it to the sound.
+                sounds[sI].push(component);
+                componentPlacedInSound = true;
+                break;
+            }
+            if (!componentPlacedInSound) {
+                // this component belongs to a new sound
+                // that comes after all existing sounds.
+                sounds.push([component]);
+                pivotDistances.push(componentDistance);
+                continue;
+            }
+        }
     }
-    get isParsed() { return this.isBlankFragment || this.linearParser.isDone; }
+    return sounds;
 }
+/**
+ * Orders Sounds and Connectors in the appropriate order in which they apply (i.e. connector groups that
+ * apply to a particular sound are placed right before the sound).
+ * e.g. When we have the following measure:
+ *
+ *  |-h---hh-------7-|
+ *  |---7--p--7--p---|
+ *  |-h-7--s------h7-|
+ *
+ * Then it is separated into the following 9 groups:
+ *
+ *      | |   | |   | |   | |   |h|   |h|   |h|   |7|   | |
+ *      | |   |7|   |p|   |7|   | |   | |   | |   | |   |p|
+ *      |h|   |7|   | |   | |   |s|   |h|   | |   |7|   | |
+ *
+ * Note: We are allowing for multiple consecutive connector groups, even though it is semantically invalid.
+ * It will be marked as an error by the linter. we are only focused on creating an accurate syntax tree.
+ *
+ * How it works is we first group the sounds using the `createSoundGrouping` function.
+ * Next we go through each sound and for each sound, we extract the connectors that appear right before a note in
+ * that sound and those connectors form (one or more) connector groups that are ordered before the sound.
+ * @param connectorsGroupedByLine an array of "Connector" node groups where each node group is a group of nodes that live on the same line, arranged in the order they appear on that line.
+ * @param soundGroups An array of "Component" node groups where each node in a group belong to the same sound. It is the result of running the `createSoundGrouping` grouper function.
+ * @param source_text the source text from which these nodes were parsed
+ */
+function createConnectorSoundOrdering(connectorsGroupedByLine, soundGroups, source_text) {
+    const lineToConnectorList = new Map();
+    const lineToConnectorPointer = new Map();
+    for (const connectors of connectorsGroupedByLine) {
+        if (connectors.length === 0)
+            continue;
+        const line = lineNum(connectors[0].from, source_text);
+        lineToConnectorList.set(line, connectors);
+        lineToConnectorPointer.set(line, 0);
+    }
+    const connectorSoundOrdering = [];
+    for (const sound of soundGroups) {
+        let connectorGroupsBeforeSound = [];
+        for (const component of sound) {
+            const componentLine = lineNum(component.from, source_text);
+            const connectors = lineToConnectorList.get(componentLine);
+            let pointer = lineToConnectorPointer.get(componentLine);
+            if (!connectors || !connectors[pointer])
+                continue;
+            for (let groupIdx = 0; groupIdx < connectors.length - pointer; pointer++, groupIdx++) {
+                const connector = connectors[pointer];
+                if (connector.from >= component.from)
+                    break;
+                if (!connectorGroupsBeforeSound[groupIdx])
+                    connectorGroupsBeforeSound[groupIdx] = [connector];
+                else
+                    connectorGroupsBeforeSound[groupIdx].push(connector);
+            }
+            lineToConnectorPointer.set(componentLine, pointer);
+        }
+        connectorSoundOrdering.concat(connectorGroupsBeforeSound.map(group => ({ type: ASTNodeTypes.ConnectorGroup, group })));
+        connectorSoundOrdering.push({ type: ASTNodeTypes.Sound, group: sound });
+    }
+    // handle dangling connectors
+    const danglingConnectors = [];
+    for (const connectors of connectorsGroupedByLine) {
+        if (connectors.length === 0)
+            continue;
+        const line = lineNum(connectors[0].from, source_text);
+        let pointer = lineToConnectorPointer.get(line);
+        for (let groupIdx = 0; groupIdx < connectors.length - pointer; pointer++, groupIdx++) {
+            const connector = connectors[pointer];
+            if (!danglingConnectors[groupIdx])
+                danglingConnectors[groupIdx] = [connector];
+            else
+                danglingConnectors[groupIdx].push(connector);
+        }
+    }
+    connectorSoundOrdering.concat(danglingConnectors.map(group => ({ type: ASTNodeTypes.ConnectorGroup, group })));
+    return connectorSoundOrdering;
+}
+function columnDistance(index, source_text) {
+    return index - source_text.lineAt(index).from;
+}
+function nonWhitespaceDistance(from, to, source_text) {
+    return source_text.slice(from, to).toString().replace(/\s/g, '').length;
+}
+function lineNum(index, source_text) {
+    return source_text.lineAt(index).number;
+}
+
+const blueprint = {
+    // All nodes are positioned relative to the anchor node within which they are positioned.
+    anchors: new Set([SourceNodeTypes.TabSegment, SourceNodeTypes.Comment]),
+    blueprint: {
+        Comment: { sourceNodeTypes: [SourceNodeTypes.Comment] },
+        TabSegment: {
+            sourceNodeTypes: [SourceNodeTypes.Modifier, SourceNodeTypes.TabSegmentLine],
+            group(sourceNodes, generator) {
+                const result = [];
+                result.concat(sourceNodes[SourceNodeTypes.Modifier].map(generator.generateNode)
+                    .filter(node => !!node));
+                const stringsByLine = sourceNodes[SourceNodeTypes.TabSegmentLine].map(segmentLine => segmentLine.getChildren(SourceNodeTypes.TabString));
+                result.concat(createPivotalGrouping(stringsByLine, generator.source_text)
+                    .map(group => generator.buildNode(ASTNodeTypes.TabBlock, {
+                    [SourceNodeTypes.TabString]: group
+                }))
+                    .filter(node => !!node));
+                return result;
+            }
+        },
+        TabBlock: {
+            sourceNodeTypes: [SourceNodeTypes.TabString],
+            group(sourceNodes, generator) {
+                const result = [];
+                // first children are Multipliers
+                sourceNodes[SourceNodeTypes.TabString].forEach(string => {
+                    result.concat(string.getChildren(SourceNodeTypes.Multiplier).map(generator.generateNode));
+                });
+                // next is LineNaming
+                const linenames = [];
+                sourceNodes[SourceNodeTypes.TabString].forEach(string => {
+                    linenames.push(string.getChild(SourceNodeTypes.MeasureLineName));
+                });
+                result.push(generator.buildNode(ASTNodeTypes.LineNaming, { [SourceNodeTypes.MeasureLineName]: linenames }));
+                // next are Measures
+                const measurelinesByLine = [];
+                sourceNodes[SourceNodeTypes.TabString].forEach(string => {
+                    measurelinesByLine.push(string.getChildren(SourceNodeTypes.MeasureLine));
+                });
+                result.concat(createSequentialGrouping(measurelinesByLine, generator.source_text)
+                    .map(group => generator.buildNode(ASTNodeTypes.Measure, {
+                    [SourceNodeTypes.MeasureLine]: group
+                })));
+                return result;
+            }
+        },
+        LineNaming: {
+            sourceNodeTypes: [SourceNodeTypes.MeasureLineName],
+            group(sourceNodes, generator) {
+                return sourceNodes[SourceNodeTypes.MeasureLineName].map(generator.generateNode);
+            }
+        },
+        Measure: {
+            sourceNodeTypes: [SourceNodeTypes.MeasureLine],
+            group(sourceNodes, generator) {
+                const componentsByLine = [];
+                const connectorsByLine = [];
+                const measurelineStartIndices = [];
+                sourceNodes[SourceNodeTypes.MeasureLine].forEach(node => {
+                    measurelineStartIndices.push(node.from);
+                    componentsByLine.push(node.getChildren(SourceNodeTypes.Component));
+                    connectorsByLine.push(node.getChildren(SourceNodeTypes.Connector));
+                });
+                const sounds = createSoundGrouping(componentsByLine, measurelineStartIndices, generator.source_text);
+                const connectorSoundOrdering = createConnectorSoundOrdering(connectorsByLine, sounds, generator.source_text);
+                const result = connectorSoundOrdering.map(grouping => {
+                    if (grouping.type == ASTNodeTypes.ConnectorGroup) {
+                        return generator.buildNode(ASTNodeTypes.ConnectorGroup, {
+                            [SourceNodeTypes.Connector]: grouping.group
+                        });
+                    }
+                    else {
+                        return generator.buildNode(ASTNodeTypes.Sound, {
+                            [SourceNodeTypes.Component]: grouping.group
+                        });
+                    }
+                });
+                return result;
+            }
+        },
+        ConnectorGroup: {
+            sourceNodeTypes: [SourceNodeTypes.Connector],
+            group(sourceNodes, generator) {
+                return sourceNodes[SourceNodeTypes.Connector].map(generator.generateNode);
+            }
+        },
+        Sound: {
+            sourceNodeTypes: [SourceNodeTypes.Component],
+            group(sourceNodes, generator) {
+                return sourceNodes[SourceNodeTypes.Component].map(generator.generateNode);
+            }
+        },
+        Multiplier: { sourceNodeTypes: [SourceNodeTypes.Multiplier] },
+        MeasureLineName: { sourceNodeTypes: [SourceNodeTypes.MeasureLineName] },
+        Connector: { sourceNodeTypes: [SourceNodeTypes.Connector] },
+        Component: { sourceNodeTypes: [SourceNodeTypes.Component] }
+    }
+};
 
 class TabTree {
     constructor(fragments) {
@@ -1047,7 +1494,7 @@ class PartialTabParseImplement {
         else if (cursor.from > this.parsedPos) { // no node covers this.parsedPos (maybe it was skipped when parsing, like whitespace)
             skipTo = cursor.from;
         }
-        else if (cursor.name !== TabFragment.AnchorNodeType) {
+        else if (!blueprint.anchors.has(cursor.name)) {
             skipTo = cursor.to;
         }
         if (skipTo) {
@@ -1545,5 +1992,5 @@ class TabLanguageSupport {
     }
 }
 
-export { ASTNodeTypes, ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTNodeTypes, ParseContext, ResolvedASTNode, SourceNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, blueprint, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
 //# sourceMappingURL=index.js.map

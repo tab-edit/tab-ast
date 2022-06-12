@@ -1,10 +1,10 @@
-import { createPivotalGrouping, createSequentialGrouping, createSoundGrouping } from "./grouper_functions"
-import { SourceNode, ASTNodeTypes as A, SourceNodeTypes as S } from "./nodes"
-import { ASTNode, GroupedNodeList, NodeGenerator } from "./node-generator"
-import { AnchoredSyntaxCursor } from "./cursors"
+import { createConnectorSoundOrdering, createPivotalGrouping, createSequentialGrouping, createSoundGrouping } from "./grouper_functions"
+import { SourceNode, ASTNodeTypes as A, SourceNodeTypes as S } from "../structure/nodes"
+import { ASTNode, GroupedNodeList, NodeGenerator } from "../structure/node-generator"
+import { AnchoredSyntaxCursor } from "../structure/cursors"
 
 export type NodeBlueprint = {
-    anchors: Set<S>,
+    anchors: Set<string>,
     blueprint: {
         [nodeName: string]: {
             sourceNodeTypes: S[]
@@ -89,15 +89,37 @@ export const blueprint = {
                 });
 
                 const sounds = createSoundGrouping(componentsByLine, measurelineStartIndices, generator.source_text);
-                const 
+                const connectorSoundOrdering = createConnectorSoundOrdering(connectorsByLine, sounds, generator.source_text);
 
-                const groups:SourceNode[][] = [];
-                const groupTypes: (S.Component|S.Connector)[]
-
-                return []
+                const result = connectorSoundOrdering.map(grouping => {
+                    if (grouping.type==A.ConnectorGroup) {
+                        return generator.buildNode(A.ConnectorGroup, {
+                            [S.Connector]: grouping.group
+                        })
+                    } else {
+                        return generator.buildNode(A.Sound, {
+                            [S.Component]: grouping.group
+                        })
+                    }
+                })
+                return result;
+            }
+        },
+        ConnectorGroup: {
+            sourceNodeTypes: [S.Connector],
+            group(sourceNodes, generator) {
+                return sourceNodes[S.Connector].map(generator.generateNode);
+            }
+        },
+        Sound: {
+            sourceNodeTypes: [S.Component],
+            group(sourceNodes, generator) {
+                return sourceNodes[S.Component].map(generator.generateNode);
             }
         },
         Multiplier: { sourceNodeTypes: [S.Multiplier] },
-        MeasureLineName: { sourceNodeTypes: [S.MeasureLineName] }
+        MeasureLineName: { sourceNodeTypes: [S.MeasureLineName] },
+        Connector: { sourceNodeTypes: [S.Connector] },
+        Component: { sourceNodeTypes: [S.Component] }
     }
 } as NodeBlueprint
