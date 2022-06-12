@@ -48,11 +48,35 @@ declare class FragmentCursor implements Cursor<ResolvedASTNode> {
     printTree(): string;
     private printTreeRecursiveHelper;
 }
+/**
+ * Creates a cursor for SyntaxNodes which are anchored to the node provided
+ * in the constructor (you can only explore the sub-tree rooted atthe provided
+ * starting node, not its siblings or ancestors)
+ */
+declare class AnchoredSyntaxCursor implements Cursor<SourceNode> {
+    private anchorNode;
+    private anchorOffset;
+    private cursor;
+    constructor(anchorNode: SyntaxNode, anchorOffset: number);
+    get type(): _lezer_common.NodeType;
+    get name(): string;
+    get from(): number;
+    get to(): number;
+    get node(): SourceNode;
+    firstChild(): boolean;
+    lastChild(): boolean;
+    enter(pos: number, side: -1 | 0 | 1): boolean;
+    parent(): boolean;
+    nextSibling(): boolean;
+    prevSibling(): boolean;
+    fork(): AnchoredSyntaxCursor;
+    private cursorAtAnchor;
+}
 
 /**
  * enum values for syntax nodes from the tab-edit/parser-tablature package. (should probably be defined in that package instead.)
  */
-declare enum SourceSyntaxNodeTypes {
+declare enum SourceNodeTypes {
     Tablature = "Tablature",
     TabSegment = "TabSegment",
     TabSegmentLine = "TabSegmentLine",
@@ -84,7 +108,7 @@ declare enum SourceSyntaxNodeTypes {
 * whose ranges/positions are all relative to a given
 * anchor position.
 */
-declare class AnchoredSyntaxNode {
+declare class SourceNode {
     private node;
     private anchorPos;
     constructor(node: SyntaxNode, anchorPos: number);
@@ -92,9 +116,10 @@ declare class AnchoredSyntaxNode {
     get name(): string;
     get from(): number;
     get to(): number;
-    getChild(type: string | number): AnchoredSyntaxNode;
-    getChildren(type: string | number): AnchoredSyntaxNode[];
-    createOffsetCopy(offset: number): AnchoredSyntaxNode;
+    getChild(type: string | number): SourceNode;
+    getChildren(type: string | number): SourceNode[];
+    createOffsetCopy(offset: number): SourceNode;
+    get cursor(): AnchoredSyntaxCursor;
 }
 /**
  * Interface through which external clients interact with an ASTNode.
@@ -136,7 +161,7 @@ declare class ResolvedASTNode {
      * @returns
      */
     sourceSyntaxNodes(): {
-        [type: string]: AnchoredSyntaxNode[];
+        [type: string]: SourceNode[];
     };
     /**
      * Generates a hash for this node. This hash is unique for every node
@@ -182,7 +207,7 @@ declare abstract class AnchoredASTNode {
      * @returns a type-grouped list of AnchoredSyntaxNode objects
      */
     getSourceSyntaxNodes(): {
-        [type: string]: AnchoredSyntaxNode[];
+        [type: string]: SourceNode[];
     };
     private _hash;
     /**
@@ -190,6 +215,23 @@ declare abstract class AnchoredASTNode {
      * @returns a string hash for the node
      */
     hash(): string;
+}
+declare enum ASTNodeTypes {
+    TabSegment = "TabSegment",
+    TabBlock = "TabBlock",
+    Measure = "Measure",
+    Sound = "Sound",
+    MeasureLineName = "MeasureLineName",
+    LineNaming = "LineNaming",
+    Hammer = "Hammer",
+    Pull = "Pull",
+    Slide = "Slide",
+    Grace = "Grace",
+    Harmonic = "Harmonic",
+    Fret = "Fret",
+    Repeat = "Repeat",
+    TimeSignature = "TimeSignature",
+    Multiplier = "Multiplier"
 }
 
 declare class TabTree {
@@ -215,7 +257,7 @@ declare type IteratorSpec = {
 declare class TabFragment {
     readonly from: number;
     readonly to: number;
-    static get AnchorNodeType(): SourceSyntaxNodeTypes;
+    static get AnchorNodeType(): SourceNodeTypes;
     readonly isBlankFragment: boolean;
     private linearParser?;
     private constructor();
@@ -393,4 +435,4 @@ declare class TabLanguageSupport {
     constructor(tabLanguage: TabLanguage, support?: Extension);
 }
 
-export { ParseContext, ResolvedASTNode, SourceSyntaxNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
+export { ASTNodeTypes, ParseContext, ResolvedASTNode, SourceNodeTypes, TabLanguage, TabLanguageSupport, TabParserImplement, TabTree, TabTreeCursor, defineTabLanguageFacet, ensureTabSyntaxTree, tabLanguage, tabLanguageDataFacetAt, tabSyntaxParserRunning, tabSyntaxTree, tabSyntaxTreeAvailable };
