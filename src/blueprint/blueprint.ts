@@ -3,6 +3,7 @@ import { SourceNode, ASTNodeTypes as A, SourceNodeTypes as S } from "../structur
 import { ASTNode, GroupedNodeList, NodeGenerator } from "../structure/node-generator"
 
 export type NodeBlueprint = {
+    top: S,
     anchors: Set<string>,
     plans: {
         [nodeName: string]: {
