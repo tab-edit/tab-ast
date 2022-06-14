@@ -1,11 +1,10 @@
 import { createConnectorSoundOrdering, createPivotalGrouping, createSequentialGrouping, createSoundGrouping } from "./grouper_functions"
 import { SourceNode, ASTNodeTypes as A, SourceNodeTypes as S } from "../structure/nodes"
 import { ASTNode, GroupedNodeList, NodeGenerator } from "../structure/node-generator"
-import { AnchoredSyntaxCursor } from "../structure/cursors"
 
 export type NodeBlueprint = {
     anchors: Set<string>,
-    blueprint: {
+    plans: {
         [nodeName: string]: {
             sourceNodeTypes: S[]
             classList?: string[]
@@ -14,10 +13,11 @@ export type NodeBlueprint = {
     }
 }
 
-export const blueprint = {
+export const default_blueprint = {
     // All nodes are positioned relative to the anchor node within which they are positioned.
+    top: S.Tablature,
     anchors: new Set([S.TabSegment, S.Comment]), 
-    blueprint: {
+    plans: {
         Comment: { sourceNodeTypes: [S.Comment] },
         TabSegment: {
             sourceNodeTypes: [S.Modifier, S.TabSegmentLine],

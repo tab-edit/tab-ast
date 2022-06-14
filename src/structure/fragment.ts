@@ -1,41 +1,33 @@
 // TODO: credit https://github.com/lezer-parser/common/blob/main/src/parse.ts
 import { EditorState, Text } from "@codemirror/state";
-import { AnchoredASTNode, SourceNodeTypes, TabSegment } from "./nodes";
+import { AnchoredASTNode, SourceNode, SourceNodeTypes, TabSegment } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 import { TabTree } from "./tree";
 import { FragmentCursor } from "./cursors";
+import { NodeBlueprint } from "../blueprint/blueprint";
+import { ASTNode, NodeGenerator } from "./node-generator";
 
 // TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
 
 export class TabFragment {
     // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
     static get AnchorNodeType() { return SourceNodeTypes.TabSegment }
-    readonly isBlankFragment: boolean;
-    private linearParser?: LinearParser
     private constructor(
         readonly from: number,
         readonly to: number,
-        rootNode: SyntaxNode,
-        sourceText: Text,
-    ) {
-        this.isBlankFragment = !rootNode;
-        if (this.isBlankFragment) return;
-        if (rootNode.name!==TabFragment.AnchorNodeType) throw new Error(`Expected ${TabFragment.AnchorNodeType} node type for creating a TabFragment, but recieved a ${rootNode.name} node instead.`);
-        let initialContent = new TabSegment({[TabFragment.AnchorNodeType]: [rootNode]}, this.from);
-        this.linearParser = new LinearParser(initialContent, sourceText);
-    }
+    ) {}
 
-    private _nodeSet:AnchoredASTNode[]; 
-    get nodeSet() { return this._nodeSet }
+    private _node_set:ASTNode[]; 
+    get nodeSet() { return this._node_set }
     advance(): FragmentCursor | null {
         if (this.isBlankFragment) return FragmentCursor.dud;
-        this._nodeSet = this.linearParser!.advance();
-
-        return this.nodeSet ? (this.linearParser!.isValid ? new FragmentCursor(this) : FragmentCursor.dud) : null;
+        this._node_set = this.linearParser!.advance();
+        return this.nodeSet ? new FragmentCursor(this) : null;
     }
 
     
+    private linearParser:LinearParser;
     /**
      * Creates an unparsed TabFragment object that can be incrementally parsed 
      * by repeatedly calling the TabFragment.advance() method.
@@ -43,10 +35,23 @@ export class TabFragment {
      * @param editorState the EditorState from which the sourceNode was obtained
      * @returns an unparsed TabFragment object
      */
-    static startParse(node: SyntaxNode, editorState: EditorState): TabFragment | null {
-        if (node.name !== TabFragment.AnchorNodeType) return null;
-        return new TabFragment(node.from, node.to, node, editorState.doc);
+    static startParse(node: SyntaxNode, editorState: EditorState, blueprint: NodeBlueprint): TabFragment | null {
+        if (!blueprint.anchors.has(node.name)) return null;
+        const fragment = new TabFragment(node.from, node.to)
+        fragment.linearParser = new LinearParser(new SourceNode(node, fragment.from), new NodeGenerator(blueprint, editorState.doc));
     }
+
+    private createOffsetCopy(offset: number):TabFragment {
+        const copy = new TabFragment(this.from+offset, this.to+offset);
+        copy.linearParser = this.linearParser;
+        return copy;
+    }
+
+    get isBlankFragment() { return !this.linearParser }
+    static createBlankFragment(from: number, to: number) {
+        return new TabFragment(from, to);
+    }
+
 
     /**
      * Applies a set of edits to an array of fragments, reusing unaffected fragments,
@@ -72,12 +77,6 @@ export class TabFragment {
         return result;
     }
 
-    private createOffsetCopy(offset: number):TabFragment {
-        const copy = new TabFragment(this.from+offset, this.to+offset, null!, null!);
-        copy.linearParser = this.linearParser;
-        return copy;
-    }
-
     /**
      * Create a set of fragments from a freshly parsed tree, or update
      * an existing set of fragments by replacing the ones that overlap
@@ -92,9 +91,6 @@ export class TabFragment {
         return result
     }
     
-    static createBlankFragment(from: number, to: number) {
-        return new TabFragment(from, to, null!, null!);
-    }
 
     get cursor() {
         return this.isParsed ? this.advance() : null;

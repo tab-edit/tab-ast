@@ -1,7 +1,7 @@
 // TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { blueprint } from "../blueprint/blueprint";
+import { default_blueprint, NodeBlueprint } from "../blueprint/blueprint";
 import { TabFragment } from "../structure/fragment";
 import { TabTree } from "../structure/tree";
 
@@ -10,6 +10,10 @@ class Range {
 }
 
 export abstract class TabParser {
+    protected blueprint: NodeBlueprint;
+    constructor(blueprint?: NodeBlueprint) {
+        this.blueprint = blueprint || default_blueprint;
+    }
     /// Start a parse for a single tree. Called by `startParse`,
     /// with the optional arguments resolved.
     abstract createParse(editorState: EditorState, fragments: readonly TabFragment[], ranges: readonly {
@@ -50,13 +54,13 @@ export abstract class TabParser {
 // TODO: think of a better name for this class
 export class TabParserImplement extends TabParser {
     createParse(editorState: EditorState, fragments: readonly TabFragment[], ranges: readonly {from: number, to: number}[]): PartialTabParse {
-        return new PartialTabParseImplement(editorState, fragments || [], ranges);
+        return new PartialTabParseImplement(editorState, fragments || [], ranges, this.blueprint);
     }
 }
 
 
 export interface PartialTabParse {
-    
+
     /// This parser is dependent on another parser.
     /// parameters:
     ///     * catchupTimeout - if the dependent parser has not caught up, do not do more than this amount of work to catch it up
@@ -99,7 +103,8 @@ export class PartialTabParseImplement implements PartialTabParse {
     constructor(
         private editorState: EditorState,
         private cachedFragments: readonly TabFragment[],
-        readonly ranges: readonly {from: number, to: number}[]
+        readonly ranges: readonly {from: number, to: number}[],
+        private blueprint: NodeBlueprint
     ) {
         this.editorState = editorState;
         this.text = editorState.doc.toString();
@@ -139,7 +144,7 @@ export class PartialTabParseImplement implements PartialTabParse {
             skipTo = rawSyntaxTree.cursor().to;
         } else if (cursor.from > this.parsedPos) {  // no node covers this.parsedPos (maybe it was skipped when parsing, like whitespace)
             skipTo = cursor.from;
-        } else if (!blueprint.anchors.has(cursor.name)) {
+        } else if (!default_blueprint.anchors.has(cursor.name)) {
             skipTo = cursor.to;
         }
 
@@ -159,7 +164,7 @@ export class PartialTabParseImplement implements PartialTabParse {
             return {blocked: false, tree: null};
         }
 
-        let frag = TabFragment.startParse(cursor.node, this.editorState)!;
+        let frag = TabFragment.startParse(cursor.node, this.editorState, this.blueprint);
         this.fragments.push(frag);
         this.parsedPos = cursor.to;
         return {blocked: false, tree: null};
