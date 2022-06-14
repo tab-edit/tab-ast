@@ -126,18 +126,26 @@ export class PartialTabParseImplement implements PartialTabParse {
         let rawSyntaxTree = ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
         if (!rawSyntaxTree) return {blocked: true, tree: null}
 
-        // TODO: we should probably not make reusing a fragment one single action because that creates a lot of overhead. we can quickly reuse multiple items, but doing it one by one wastes resources
-        if (this.cachedFragments && this.reuseFragment(this.parsedPos)) return {blocked: false, tree: null}
-        // TODO: maybe handle case here where we may not want to reuse fragment because the fragment has been changed from what it actually is (maybe the rawparsetree didn't parse teh full tabsegment last time so we want to replace it with newly, fully parsed tab segment)
-            
-        let cursor = rawSyntaxTree.cursor();
-        if (this.parsedPos===cursor.to) // we're at the end of partially-parsed raw syntax tree.
+      
+        if (this.parsedPos===rawSyntaxTree.cursor().to) // we're at the end of partially-parsed raw syntax tree.
             return {blocked: true, tree: null}
+
+        // TODO: we should probably not make reusing a fragment one single action because that creates a lot of overhead. we can quickly reuse multiple items, but doing it one by one wastes resources
+        // TODO: maybe handle case here where we may not want to reuse fragment because the fragment has been changed from what it actually is (maybe the rawparsetree didn't parse teh full tabsegment last time so we want to replace it with newly, fully parsed tab segment)
+        if (this.cachedFragments && this.reuseFragment(this.parsedPos)) return {blocked: false, tree: null}
+            
+
+        // TODO: confirm the behaviour of resolve() when the passed-in position is outside of the range of the tree
+        let cursor = rawSyntaxTree.resolve(this.parsedPos).cursor();
+        // TODO: handle case where cursor might have resolve to a node that does not encompass this.parsedPos (maybe this.parsedPos is at a position that was skipped, maybe it was whitespace. so we resolve to a node after this.parsedPos. we need to handle this scenario)
+        while (!this.blueprint.anchors.has(cursor.name) && cursor.name!==this.blueprint.top) {
+            cursor.parent();
+        }
 
         let endOfSyntaxTree = !cursor.firstChild();
         while (cursor.to <= this.parsedPos && !endOfSyntaxTree) {
             if ((endOfSyntaxTree = !cursor.nextSibling())) break;
-        }
+        }  
 
         let skipTo: number | null = null;
         if (endOfSyntaxTree) {   // end of partial syntax tree
