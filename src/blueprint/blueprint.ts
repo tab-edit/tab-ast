@@ -3,7 +3,8 @@ import { SourceNode, ASTNodeTypes as A, SourceNodeTypes as S } from "../structur
 import { ASTNode, GroupedNodeList, NodeGenerator } from "../structure/node-generator"
 
 export type NodeBlueprint = {
-    anchors: Set<string>,
+    // anchor nodes must be one level below the top level of the parse tree
+    anchors: Set<string>, 
     plans: {
         [nodeName: string]: {
             sourceNodeTypes: S[]
@@ -15,7 +16,7 @@ export type NodeBlueprint = {
 
 export const default_blueprint = {
     // All nodes are positioned relative to the anchor node within which they are positioned.
-    top: S.Tablature,
+    top: S.Top,
     anchors: new Set([S.TabSegment, S.Comment]), 
     plans: {
         Comment: { sourceNodeTypes: [S.Comment] },
@@ -31,7 +32,7 @@ export const default_blueprint = {
                 const stringsByLine = sourceNodes[S.TabSegmentLine].map(segmentLine => segmentLine.getChildren(S.TabString))
                 result.concat(
                     createPivotalGrouping(stringsByLine, generator.source_text)
-                    .map(group => generator.buildNode(A.TabBlock, {
+                    .map(group => generator.constructNode(A.TabBlock, {
                         [S.TabString]: group
                     }))
                     .filter(node => !!node)
@@ -54,7 +55,7 @@ export const default_blueprint = {
                 sourceNodes[S.TabString].forEach(string => {
                     linenames.push(string.getChild(S.MeasureLineName))
                 })
-                result.push(generator.buildNode(A.LineNaming, { [S.MeasureLineName]: linenames }));
+                result.push(generator.constructNode(A.LineNaming, { [S.MeasureLineName]: linenames }));
 
                 // next are Measures
                 const measurelinesByLine:SourceNode[][] = [];
@@ -63,7 +64,7 @@ export const default_blueprint = {
                 })
                 result.concat(
                     createSequentialGrouping(measurelinesByLine, generator.source_text)
-                    .map(group => generator.buildNode(A.Measure, {
+                    .map(group => generator.constructNode(A.Measure, {
                         [S.MeasureLine]: group
                     }))
                 )
@@ -93,11 +94,11 @@ export const default_blueprint = {
 
                 const result = connectorSoundOrdering.map(grouping => {
                     if (grouping.type==A.ConnectorGroup) {
-                        return generator.buildNode(A.ConnectorGroup, {
+                        return generator.constructNode(A.ConnectorGroup, {
                             [S.Connector]: grouping.group
                         })
                     } else {
-                        return generator.buildNode(A.Sound, {
+                        return generator.constructNode(A.Sound, {
                             [S.Component]: grouping.group
                         })
                     }

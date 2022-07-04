@@ -1,6 +1,6 @@
 // TODO: credit https://github.com/lezer-parser/common/blob/main/src/parse.ts
-import { EditorState, Text } from "@codemirror/state";
-import { AnchoredASTNode, SourceNode, SourceNodeTypes, TabSegment } from "./nodes";
+import { EditorState } from "@codemirror/state";
+import { SourceNode, SourceNodeTypes } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 import { TabTree } from "./tree";
@@ -9,25 +9,22 @@ import { NodeBlueprint } from "../blueprint/blueprint";
 import { ASTNode, NodeGenerator } from "./node-generator";
 
 // TODO: consider replacing all occurences of editorState with sourceText where sourceText is editorState.doc
-
 export class TabFragment {
-    // the position of all nodes within a tab fragment is relative to (anchored by) the position of the tab fragment
-    static get AnchorNodeType() { return SourceNodeTypes.TabSegment }
     private constructor(
         readonly from: number,
         readonly to: number,
     ) {}
 
-    private _node_set:ASTNode[]; 
-    get nodeSet() { return this._node_set }
+    private _nodeSet:ASTNode[]; 
+    get nodeSet() { return this._nodeSet }
     advance(): FragmentCursor | null {
         if (this.isBlankFragment) return FragmentCursor.dud;
-        this._node_set = this.linearParser!.advance();
-        return this.nodeSet ? new FragmentCursor(this) : null;
+        this._nodeSet = this.linearParser.advance();
+        return this._nodeSet ? new FragmentCursor(this) : null;
     }
 
-    
-    private linearParser:LinearParser;
+    private blueprint: NodeBlueprint;
+    private linearParser: LinearParser;
     /**
      * Creates an unparsed TabFragment object that can be incrementally parsed 
      * by repeatedly calling the TabFragment.advance() method.
@@ -38,6 +35,7 @@ export class TabFragment {
     static startParse(node: SyntaxNode, editorState: EditorState, blueprint: NodeBlueprint): TabFragment | null {
         if (!blueprint.anchors.has(node.name)) return null;
         const fragment = new TabFragment(node.from, node.to)
+        fragment.blueprint = blueprint;
         fragment.linearParser = new LinearParser(new SourceNode(node, fragment.from), new NodeGenerator(blueprint, editorState.doc));
     }
 
@@ -91,13 +89,8 @@ export class TabFragment {
         return result
     }
     
-
-    get cursor() {
-        return this.isParsed ? this.advance() : null;
-    }
-
     toString() {
-        return this.cursor?.printTree() || "";
+        return new FragmentCursor(this).printTree() || "";
     }
     
     get isParsed() { return this.isBlankFragment || this.linearParser!.isDone }

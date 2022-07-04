@@ -1,7 +1,5 @@
-import { Text } from "@codemirror/state";
-import { NodeBlueprint } from "../blueprint/blueprint";
 import { ASTNode, NodeGenerator } from "../structure/node-generator";
-import { AnchoredASTNode, Measure, SourceNode } from "../structure/nodes";
+import { SourceNode } from "../structure/nodes";
 
 /**
  * The LinearParser class enables gradual parsing of a raw syntax node into an array-based tree data structure.
