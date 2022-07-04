@@ -1,7 +1,9 @@
 // TODO: credit https://github.com/lezer-parser/markdown/blob/main/src/markdown.ts
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import { default_blueprint, NodeBlueprint } from "../blueprint/blueprint";
 import { TabFragment } from "../structure/fragment";
+import { SourceNodeTypes } from "../structure/nodes";
 import { TabTree } from "../structure/tree";
 
 class Range {
@@ -9,6 +11,10 @@ class Range {
 }
 
 export abstract class TabParser {
+    protected blueprint: NodeBlueprint;
+    constructor(blueprint?: NodeBlueprint) {
+        this.blueprint = blueprint || default_blueprint;
+    }
     /// Start a parse for a single tree. Called by `startParse`,
     /// with the optional arguments resolved.
     abstract createParse(editorState: EditorState, fragments: readonly TabFragment[], ranges: readonly {
@@ -49,13 +55,13 @@ export abstract class TabParser {
 // TODO: think of a better name for this class
 export class TabParserImplement extends TabParser {
     createParse(editorState: EditorState, fragments: readonly TabFragment[], ranges: readonly {from: number, to: number}[]): PartialTabParse {
-        return new PartialTabParseImplement(editorState, fragments || [], ranges);
+        return new PartialTabParseImplement(editorState, fragments || [], ranges, this.blueprint);
     }
 }
 
 
 export interface PartialTabParse {
-    
+
     /// This parser is dependent on another parser.
     /// parameters:
     ///     * catchupTimeout - if the dependent parser has not caught up, do not do more than this amount of work to catch it up
@@ -86,8 +92,6 @@ export interface PartialTabParse {
 export class PartialTabParseImplement implements PartialTabParse {
     stoppedAt: number | null = null;
     private fragments: TabFragment[] = [];
-    private to: number;
-    private text: string;
     parsedPos: number;
 
     getFragments() {
@@ -98,12 +102,10 @@ export class PartialTabParseImplement implements PartialTabParse {
     constructor(
         private editorState: EditorState,
         private cachedFragments: readonly TabFragment[],
-        readonly ranges: readonly {from: number, to: number}[]
+        readonly ranges: readonly {from: number, to: number}[],
+        private blueprint: NodeBlueprint
     ) {
-        this.editorState = editorState;
-        this.text = editorState.doc.toString();
-        this.to = ranges[ranges.length - 1].to;
-        this.parsedPos = ranges[0].from;
+        this.parsedPos = ranges[0]?.from || 0;
     }
 
     advance(catchupTimeout: number = 25): {blocked:boolean, tree: TabTree|null} {
@@ -119,31 +121,30 @@ export class PartialTabParseImplement implements PartialTabParse {
 
         let rawSyntaxTree = ensureSyntaxTree(this.editorState, this.parsedPos, catchupTimeout);
         if (!rawSyntaxTree) return {blocked: true, tree: null}
-
+        
         // TODO: we should probably not make reusing a fragment one single action because that creates a lot of overhead. we can quickly reuse multiple items, but doing it one by one wastes resources
-        if (this.cachedFragments && this.reuseFragment(this.parsedPos)) return {blocked: false, tree: null}
         // TODO: maybe handle case here where we may not want to reuse fragment because the fragment has been changed from what it actually is (maybe the rawparsetree didn't parse teh full tabsegment last time so we want to replace it with newly, fully parsed tab segment)
+        if (this.cachedFragments && this.reuseFragment(this.parsedPos))
+            return {blocked: false, tree: null}
             
-        let cursor = rawSyntaxTree.cursor();
-        if (this.parsedPos===cursor.to) // we're at the end of partially-parsed raw syntax tree.
-            return {blocked: true, tree: null}
-
-        let endOfSyntaxTree = !cursor.firstChild();
-        while (cursor.to <= this.parsedPos && !endOfSyntaxTree) {
-            if ((endOfSyntaxTree = !cursor.nextSibling())) break;
+        let current = rawSyntaxTree.resolve(this.parsedPos, 1);
+        while (!this.blueprint.anchors.has(current.name)) {
+            if (current.name===SourceNodeTypes.Top || current.parent.name==SourceNodeTypes.Top) break;
+            current = current.parent;
         }
 
+ 
         let skipTo: number | null = null;
-        if (endOfSyntaxTree) {   // end of partial syntax tree
+        if (current.name==SourceNodeTypes.Top) {   // end of partial syntax tree
             skipTo = rawSyntaxTree.cursor().to;
-        } else if (cursor.from > this.parsedPos) {  // no node covers this.parsedPos (maybe it was skipped when parsing, like whitespace)
-            skipTo = cursor.from;
-        } else if (cursor.name!==TabFragment.AnchorNodeType) {
-            skipTo = cursor.to;
+        } else if (current.from > this.parsedPos) {  // no node covers this.parsedPos (maybe it was skipped when parsing, like whitespace)
+            skipTo = current.from;
+        } else if (!this.blueprint.anchors.has(current.name)) {
+            skipTo = current.to;
         }
 
         if (skipTo) {
-            skipTo = (cursor.from==cursor.to) ? skipTo+1 : skipTo; // for zero-width error nodes, prevent being stuck in loop.
+            skipTo = (current.from==current.to) ? skipTo+1 : skipTo; // for zero-width error nodes, prevent being stuck in loop.
             let prevFrag = this.fragments[this.fragments.length-1];
             let blankFrag:TabFragment;
             if (prevFrag && prevFrag.isBlankFragment) {
@@ -158,9 +159,9 @@ export class PartialTabParseImplement implements PartialTabParse {
             return {blocked: false, tree: null};
         }
 
-        let frag = TabFragment.startParse(cursor.node, this.editorState)!;
+        let frag = TabFragment.startParse(current.node, this.editorState, this.blueprint);
         this.fragments.push(frag);
-        this.parsedPos = cursor.to;
+        this.parsedPos = current.to;
         return {blocked: false, tree: null};
     }
 

@@ -1,6 +1,6 @@
 import { TabTreeCursor } from "./cursors";
 import { TabFragment } from "./fragment";
-import { AnchoredASTNode, ResolvedASTNode } from "./nodes";
+import { FixedASTNode } from "./nodes";
 
 export class TabTree {
     readonly from: number;
@@ -56,10 +56,10 @@ export class TabTree {
 
 type IteratorSpec = {
     enter: (
-        node: ResolvedASTNode
+        node: FixedASTNode
     ) => false | void,
     leave?: (
-        node: ResolvedASTNode
+        node: FixedASTNode
     ) => void,
     from?: number,
     to?: number

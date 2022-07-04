@@ -1,6 +1,6 @@
 import { SyntaxNode, TreeCursor } from "@lezer/common";
 import { TabFragment } from "./fragment";
-import { SourceNode, ResolvedASTNode } from "./nodes";
+import { SourceNode, FixedASTNode } from "./nodes";
 
 export interface Cursor<T> {
     name: string;
@@ -13,13 +13,13 @@ export interface Cursor<T> {
     fork(): Cursor<T>;
 }
 
-export class TabTreeCursor implements Cursor<ResolvedASTNode> {
+export class TabTreeCursor implements Cursor<FixedASTNode> {
     private currentCursor: FragmentCursor;
     private constructor(
         private fragSet: TabFragment[],
         private pointer: number = 0,
     ) {
-        this.currentCursor = fragSet[pointer].cursor;
+        this.currentCursor = new FragmentCursor(fragSet[pointer]);
     }
     public static from(fragSet: TabFragment[], startingPos?: number) {
         if (!fragSet || !fragSet.length) return null;
@@ -34,7 +34,7 @@ export class TabTreeCursor implements Cursor<ResolvedASTNode> {
     prevSibling() {
         if (!this.currentCursor.fork().parent() && this.pointer>0) {
             this.pointer = this.pointer-1;
-            this.currentCursor = this.fragSet[this.pointer].cursor;
+            this.currentCursor = new FragmentCursor(this.fragSet[this.pointer]);
             return true;
         }
         return this.currentCursor.prevSibling();
@@ -42,7 +42,7 @@ export class TabTreeCursor implements Cursor<ResolvedASTNode> {
     nextSibling() {
         if (!this.currentCursor.fork().parent() && this.pointer+1 < this.fragSet.length) {
             this.pointer = this.pointer+1;
-            this.currentCursor = this.fragSet[this.pointer].cursor;
+            this.currentCursor = new FragmentCursor(this.fragSet[this.pointer]);
             return true;
         }
         return this.currentCursor.nextSibling();
@@ -54,27 +54,24 @@ export class TabTreeCursor implements Cursor<ResolvedASTNode> {
     }
 }
 
-export class FragmentCursor implements Cursor<ResolvedASTNode> {
+export class FragmentCursor implements Cursor<FixedASTNode> {
     private ancestryTrace: number[] = [];
     private pointer: number = 0;
 
     constructor(readonly fragment: TabFragment) {}
     get name() { return this.fragment.nodeSet[this.pointer].name }
     get node() { 
-        // TODO: could improve efficiency by implementing some sort of caching. This would
-        // snowball because the ResolvedASTNode class caches a bunch of values, so
-        // performance benefits might be more than meets the eye
-        return new ResolvedASTNode(this.fragment.nodeSet[this.pointer], this);
+        return new FixedASTNode(this.fragment.nodeSet[this.pointer], this);
     }
 
     getAncestors() {
-        return this.node.getAncestors();
+        return this.ancestryTrace.map(pos => new FixedASTNode(this.fragment.nodeSet[pos], this));
     }
 
     firstChild() {
         if (this.fragment.nodeSet.length===0) return false;
         let currentPointer = this.pointer;
-        if (this.fragment.nodeSet[this.pointer].length===1) return false;
+        if (this.fragment.nodeSet[this.pointer].descendantCount===0) return false;
         this.pointer+=1;
         this.ancestryTrace.push(currentPointer);
         return true;
@@ -113,8 +110,8 @@ export class FragmentCursor implements Cursor<ResolvedASTNode> {
         if (!this.ancestryTrace.length) return false
         let parentPointer = this.ancestryTrace[this.ancestryTrace.length-1];
 
-        let nextInorder = this.pointer + this.fragment.nodeSet[this.pointer].length;
-        if (parentPointer+this.fragment.nodeSet[parentPointer].length <= nextInorder) return false;
+        let nextInorder = this.pointer + this.fragment.nodeSet[this.pointer].descendantCount + 1;
+        if (parentPointer + this.fragment.nodeSet[parentPointer].descendantCount + 1 <= nextInorder) return false;
         this.pointer = nextInorder;
         return true;
     }
@@ -126,7 +123,7 @@ export class FragmentCursor implements Cursor<ResolvedASTNode> {
         return copy;
     }
 
-    static readonly dud =  new FragmentCursor(TabFragment.createBlankFragment(0,0));
+    static get dud() { return new FragmentCursor(TabFragment.createBlankFragment(0,0)); }
 
     printTree() {
         let str = this.printTreeRecursiveHelper();
@@ -134,7 +131,7 @@ export class FragmentCursor implements Cursor<ResolvedASTNode> {
     }
     private printTreeRecursiveHelper() {
         if (this.fragment.nodeSet.length==0) return "";
-        let str = `${this.fragment.nodeSet[this.pointer].name}[${this.fragment.nodeSet[this.pointer].ranges.toString()}]`;
+        let str = `${this.fragment.nodeSet[this.pointer].name}`;
         if (this.firstChild()) str += "(";
         else return str;
         let first = true;
@@ -157,48 +154,25 @@ export class FragmentCursor implements Cursor<ResolvedASTNode> {
 // still maintaining the fact that all nodes' positions are 
 // relative to the TabFragment in which they are contained.
 /**
- * Creates a cursor for SyntaxNodes which are anchored to the node provided
- * in the constructor (you can only explore the sub-tree rooted atthe provided
- * starting node, not its siblings or ancestors)
+ * Acts as a cursor for SyntaxNode objects but wraps the
+ * produced SyntaxNode objects in a SourceNode object.
  */
-export class AnchoredSyntaxCursor implements Cursor<SourceNode> {
+export class SourceCursor implements Cursor<SourceNode> {
     private cursor: TreeCursor;
-    constructor(
-        private anchorNode: SyntaxNode,
-        private anchorOffset: number,
-    ) {
-        this.cursor = anchorNode.cursor();
-    }
+    constructor(node: SyntaxNode) { this.cursor = node.cursor() }
     
     get type() { return this.cursor.type }
     get name() { return this.cursor.name }
-    get from() { return this.cursor.from - this.anchorOffset }
-    get to() { return this.cursor.to - this.anchorOffset }
-    get node() { return new SourceNode(this.cursor.node, this.anchorOffset); }
+    get from() { return this.cursor.from }
+    get to() { return this.cursor.to }
+    get node() { return new SourceNode(this.cursor.node, 0); }
     firstChild() { return this.cursor.firstChild() }
     lastChild() { return this.cursor.lastChild() }
-    enter(
-        pos: number,
-        side: -1 | 0 | 1
-    ) {
-        return this.cursor.enter(pos, side);
-    }
-    parent() {
-        if (this.name===TabFragment.AnchorNodeType || this.cursorAtAnchor()) return false;
-        return this.cursor.parent();
-    }
-    nextSibling() {
-        if (this.name===TabFragment.AnchorNodeType || this.cursorAtAnchor()) return false;
-        return this.cursor.nextSibling();
-    }
-    prevSibling() {
-        if (this.name===TabFragment.AnchorNodeType || this.cursorAtAnchor()) return false;
-        return this.cursor.nextSibling();
-    }
+    parent() { return this.cursor.parent() }
+    nextSibling() { return this.cursor.nextSibling() }
+    prevSibling() { return this.cursor.prevSibling() }
+    enter(pos: number, side: -1 | 0 | 1) { return this.cursor.enter(pos, side); }
     fork() {
-        return new AnchoredSyntaxCursor(this.cursor.node, this.anchorOffset);
-    }
-    private cursorAtAnchor() {
-        return this.name == this.anchorNode.name && this.from == this.anchorNode.from && this.to == this.anchorNode.to;
+        return new SourceCursor(this.cursor.node);
     }
 }

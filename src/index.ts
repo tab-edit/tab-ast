@@ -2,6 +2,7 @@
 import { ChangeDesc, EditorState, Extension, Facet, StateEffect, StateField, Transaction } from "@codemirror/state";
 import { EditorView, logException, ViewPlugin, ViewUpdate } from "@codemirror/view";
 import { ChangedRange } from "@lezer/common";
+import { NodeBlueprint } from "./blueprint/blueprint";
 import { TabParser, PartialTabParse } from "./parsers/fragment_level_parser";
 import { TabFragment } from "./structure/fragment";
 import { TabTree } from "./structure/tree";
@@ -298,7 +299,8 @@ export class ParseContext  {
     /// When `until` is given, a reparse will be scheduled when that
     /// promise resolves.
     static getSkippingParser(until?: Promise<unknown>) {
-        return new class extends TabParser {
+        const test = new class extends TabParser {
+            blueprint: NodeBlueprint = null;
             createParse(editorState: EditorState, fragments: readonly TabFragment[], ranges: readonly { from: number; to: number; }[]): PartialTabParse {
                 let from = ranges[0].from, to = ranges[ranges.length - 1].to;
                 let parser = {
@@ -319,6 +321,7 @@ export class ParseContext  {
                 return parser;
             }
         }
+        return test;
     }
 
     /// @internal
@@ -511,5 +514,5 @@ export class TabLanguageSupport {
 
 export { TabTree } from './structure/tree';
 export { TabTreeCursor } from './structure/cursors';
-export { ResolvedASTNode } from './structure/nodes';
+export { FixedASTNode } from './structure/nodes';
 export { SourceNodeTypes, ASTNodeTypes } from "./structure/nodes";
