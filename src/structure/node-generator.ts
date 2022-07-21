@@ -53,14 +53,14 @@ export class NodeGenerator {
      * @returns an ASTNode object, or null if the sourceNode type does not have an entry in the blueprint.
      */
     generateNode(sourceNode: SourceNode): ASTNode | null {
-        const blueprint = this.node_blueprint.plans[sourceNode.name];
-        if (!blueprint) return null;
+        const plan = this.node_blueprint.plans[sourceNode.name];
 
         const sourceNodes:GroupedNodeList = {}
-        blueprint.sourceNodeTypes.forEach(type => {
-            sourceNodes[type] = sourceNode.getChildren(type)
+        const sourceNodeTypes = plan ? plan.sourceNodeTypes : [sourceNode.name];
+        sourceNodeTypes.forEach(type => {
+            sourceNodes[type] = sourceNode.name == type ? [sourceNode] : sourceNode.getChildren(type);
         });
-        return new ASTNode(sourceNode.name, blueprint.classList, sourceNodes)
+        return new ASTNode(sourceNode.name, plan?.classList || [], sourceNodes)
     }
 
     /**

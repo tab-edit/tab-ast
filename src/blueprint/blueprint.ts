@@ -63,7 +63,7 @@ export const default_blueprint = {
                     measurelinesByLine.push(string.getChildren(S.MeasureLine));
                 })
                 result.concat(
-                    createSequentialGrouping(measurelinesByLine, generator.source_text)
+                    createSequentialGrouping(measurelinesByLine)
                     .map(group => generator.constructNode(A.Measure, {
                         [S.MeasureLine]: group
                     }))

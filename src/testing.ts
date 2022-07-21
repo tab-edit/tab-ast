@@ -1,5 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { parser } from "parser-tablature";
+import { default_blueprint } from "./blueprint/blueprint";
 import { FragmentCursor } from "./structure/cursors";
 import { TabFragment } from "./structure/fragment";
 
@@ -28,7 +29,7 @@ console.log(prettyPrint(tree.toString()));
 let x = tree.cursor();
 x.firstChild();
 x.nextSibling();
-let tabFragment = TabFragment.startParse(x.node, editorState);
+let tabFragment = TabFragment.startParse(x.node, editorState, default_blueprint);
 let cursor: FragmentCursor;
 let i = 0;
 while (!(cursor = tabFragment.advance())) { 

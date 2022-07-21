@@ -106,10 +106,9 @@ export function createPivotalGrouping(nodesGroupedByLine: SourceNode[][], source
  * 
  * This is used to group a bunch of MesureLine nodes arranged by line into multiple Measure nodes
  * @param nodesGroupedByLine an array of node groups where each node group is a group of nodes that live on the same line, arranged in the order they appear on that line.
- * @param source_text the source text from which these nodes were parsed
  * @returns an array where each entry is a list of nodes which belong to the same group.
  */
-export function createSequentialGrouping(nodesGroupedByLine: SourceNode[][], source_text: Text) {
+export function createSequentialGrouping(nodesGroupedByLine: SourceNode[][]) {
     const groups = [];
     let groupingDone: boolean, line: SourceNode[], node: SourceNode;
     for (let gI=0; !groupingDone; gI++) {

@@ -1,6 +1,6 @@
 // TODO: credit https://github.com/lezer-parser/common/blob/main/src/parse.ts
 import { EditorState } from "@codemirror/state";
-import { SourceNode, SourceNodeTypes } from "./nodes";
+import { SourceNode } from "./nodes";
 import { LinearParser } from "../parsers/node_level_parser";
 import { ChangedRange, SyntaxNode } from "@lezer/common";
 import { TabTree } from "./tree";
